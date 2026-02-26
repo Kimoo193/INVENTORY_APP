@@ -25,64 +25,53 @@ class _ImportScreenState extends State<ImportScreen> {
     _selectedDate = InventoryItem.today();
   }
 
+  // ============================================================
+  // استيراد Excel - يتعرف على 6 أشكال مختلفة
+  // ============================================================
   Future<void> _importFromExcel() async {
-    setState(() { _loading = true; _status = 'جاري اختيار الملف...'; });
-
+    setState(() {
+      _loading = true;
+      _status = 'جاري اختيار الملف...';
+    });
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['xlsx', 'xls'],
       );
-
       if (result == null) {
-        setState(() { _loading = false; _status = ''; });
+        setState(() {
+          _loading = false;
+          _status = '';
+        });
         return;
       }
 
       final file = File(result.files.single.path!);
       final bytes = await file.readAsBytes();
       final excel = Excel.decodeBytes(bytes);
-
       final items = <Map<String, String>>[];
 
       for (final sheetName in excel.tables.keys) {
         final sheet = excel.tables[sheetName]!;
-        for (int i = 1; i < sheet.rows.length; i++) {
-          final row = sheet.rows[i];
-          if (row.isEmpty) continue;
+        if (sheet.rows.isEmpty) continue;
 
-          String getCellValue(int index) {
-            if (index >= row.length) return '';
-            final cell = row[index];
-            if (cell == null) return '';
-            return cell.value?.toString().trim() ?? '';
-          }
+        // استخرج الهيدر
+        final headerRow = sheet.rows[0];
+        final headers = headerRow
+            .map((c) => (c?.value?.toString() ?? '').trim())
+            .toList();
 
-          final product = getCellValue(1);
-          final warehouse = getCellValue(2);
-          final serial = getCellValue(3);
-          final condition = getCellValue(4);
-          final expiry = getCellValue(5);
-          final notes = getCellValue(6);
-
-          if (product.isEmpty) continue;
-
-          items.add({
-            'product': product,
-            'warehouse': warehouse.isEmpty ? 'WH32/مخزن محمد مرسي' : warehouse,
-            'serial': serial,
-            'condition': ['جديد', 'مستخدم', 'تالف'].contains(condition) ? condition : 'جديد',
-            'expiry': expiry,
-            'notes': notes,
-          });
-        }
+        final sheetItems = _detectAndParseExcelSheet(sheet, headers);
+        items.addAll(sheetItems);
       }
 
       setState(() {
         _loading = false;
         _previewItems = items;
-        _showPreview = true;
-        _status = 'تم قراءة ${items.length} عنصر من Excel';
+        _showPreview = items.isNotEmpty;
+        _status = items.isEmpty
+            ? 'مش قادر يقرأ الملف - تأكد من الشكل'
+            : 'تم قراءة ${items.length} عنصر من Excel';
       });
     } catch (e) {
       setState(() {
@@ -92,24 +81,228 @@ class _ImportScreenState extends State<ImportScreen> {
     }
   }
 
-  Future<void> _importFromPdf() async {
-    setState(() { _loading = true; _status = 'جاري اختيار الملف...'; });
+  List<Map<String, String>> _detectAndParseExcelSheet(
+      Sheet sheet, List<String> headers) {
+    final items = <Map<String, String>>[];
 
+    String h(int i) => i < headers.length ? headers[i].toLowerCase() : '';
+    String getCellStr(List<Data?> row, int i) {
+      if (i >= row.length || row[i] == null) return '';
+      return row[i]!.value?.toString().trim() ?? '';
+    }
+
+    // ============================================================
+    // شكل 1: Product/Display Name | Cost | Qty | Location | Serial
+    // مثال: شيت_المخازن_محمد_مرسي.xlsx
+    // ============================================================
+    if (headers.any((h) => h.contains('Product/Display Name') ||
+        h.contains('product/display'))) {
+      int productCol = headers.indexWhere((h) =>
+          h.toLowerCase().contains('product'));
+      int locationCol = headers.indexWhere((h) =>
+          h.toLowerCase().contains('location'));
+      int serialCol = headers.indexWhere((h) =>
+          h.toLowerCase().contains('serial'));
+
+      for (int i = 1; i < sheet.rows.length; i++) {
+        final row = sheet.rows[i];
+        final product = getCellStr(row, productCol == -1 ? 0 : productCol);
+        final location = getCellStr(row, locationCol == -1 ? 3 : locationCol);
+        String serial = getCellStr(row, serialCol == -1 ? 4 : serialCol);
+        if (product.isEmpty) continue;
+        // نظّف السيريال من prefix زي "206B:"
+        serial = serial.replaceAll(RegExp(r'^[A-Z0-9]+:'), '');
+        items.add({
+          'product': _cleanName(product),
+          'warehouse': location.isEmpty ? 'WH32/مخزن محمد مرسي' : location,
+          'serial': serial,
+          'condition': 'جديد',
+          'expiry': '',
+          'notes': '',
+        });
+      }
+      return items;
+    }
+
+    // ============================================================
+    // شكل 2: Product | Lot/Serial Number | Inventoried Quantity
+    // مثال: جرد_على_رضا.xlsx
+    // ============================================================
+    if (headers.any((h) =>
+        h.contains('Lot/Serial') || h.contains('lot/serial'))) {
+      int productCol = 0;
+      int serialCol = headers.indexWhere((h) =>
+          h.toLowerCase().contains('lot') || h.toLowerCase().contains('serial'));
+
+      for (int i = 1; i < sheet.rows.length; i++) {
+        final row = sheet.rows[i];
+        final product = getCellStr(row, productCol);
+        final serial = getCellStr(row, serialCol == -1 ? 1 : serialCol);
+        if (product.isEmpty && serial.isEmpty) continue;
+        if (product.isEmpty) continue;
+        items.add({
+          'product': _cleanName(product),
+          'warehouse': 'WH32/مخزن محمد مرسي',
+          'serial': serial,
+          'condition': 'جديد',
+          'expiry': '',
+          'notes': '',
+        });
+      }
+      return items;
+    }
+
+    // ============================================================
+    // شكل 3: المنتج | الموقع | السريال | حالة الجهاز | تاريخ صلاحية
+    // مثال: جرد_5-11، 1محمد_مرسي.xlsx
+    // ============================================================
+    if (headers.any((h) =>
+        h.contains('المنتج') || h.contains('منتج'))) {
+      int productCol = headers.indexWhere((h) =>
+          h.contains('المنتج') || h.contains('منتج'));
+      int locationCol = headers.indexWhere((h) =>
+          h.contains('الموقع') || h.contains('موقع'));
+      int serialCol = headers.indexWhere((h) =>
+          h.contains('السريال') || h.contains('سريال') || h.contains('السريل'));
+      int conditionCol = headers.indexWhere((h) =>
+          h.contains('حالة') || h.contains('ملاحظات') || h.contains('ملحظات'));
+      int expiryCol = headers.indexWhere((h) =>
+          h.contains('تاريخ') || h.contains('صلاحية'));
+
+      for (int i = 1; i < sheet.rows.length; i++) {
+        final row = sheet.rows[i];
+        final product =
+            getCellStr(row, productCol == -1 ? 0 : productCol);
+        if (product.isEmpty) continue;
+
+        final location =
+            getCellStr(row, locationCol == -1 ? 1 : locationCol);
+        String serial =
+            getCellStr(row, serialCol == -1 ? 2 : serialCol);
+        final condRaw =
+            getCellStr(row, conditionCol == -1 ? 3 : conditionCol);
+        final expiry =
+            getCellStr(row, expiryCol == -1 ? 4 : expiryCol);
+
+        // نظّف السيريال
+        serial = serial.replaceAll(RegExp(r'^[A-Z0-9]+:'), '');
+
+        String condition = 'جديد';
+        String notes = condRaw;
+        if (condRaw.contains('مستخدم')) condition = 'مستخدم';
+        else if (condRaw.contains('تالف') || condRaw.contains('عاطل')) {
+          condition = 'تالف';
+        }
+
+        items.add({
+          'product': _cleanName(product),
+          'warehouse': location.isEmpty ? 'WH32/مخزن محمد مرسي' : location,
+          'serial': serial,
+          'condition': condition,
+          'expiry': expiry,
+          'notes': notes == condition ? '' : notes,
+        });
+      }
+      return items;
+    }
+
+    // ============================================================
+    // شكل 4: أعمدة كل عمود منتج مختلف مع سيريالات
+    // مثال: جرد_أ_محمدمرسي_2-9.xlsx, DVR_2-9_.xlsx
+    // ============================================================
+    if (headers.isNotEmpty &&
+        !headers.any((h) => h.contains('المنتج')) &&
+        headers.length >= 3) {
+      // كل عمود هو منتج، والبيانات هي السيريالات
+      for (int col = 0; col < headers.length; col++) {
+        final productHeader = headers[col];
+        if (productHeader.isEmpty) continue;
+
+        // استخرج اسم المنتج والحالة من الهيدر
+        String condition = 'جديد';
+        if (productHeader.contains('مستخدم')) condition = 'مستخدم';
+        else if (productHeader.contains('تالف') || productHeader.contains('عاطل')) {
+          condition = 'تالف';
+        }
+
+        for (int row = 1; row < sheet.rows.length; row++) {
+          final serial = getCellStr(sheet.rows[row], col);
+          if (serial.isEmpty) continue;
+          if (!RegExp(r'\d{5,}').hasMatch(serial)) continue;
+
+          items.add({
+            'product': _headerToProductName(productHeader),
+            'warehouse': 'WH32/مخزن محمد مرسي',
+            'serial': serial.replaceAll(RegExp(r'^[A-Z0-9]+:'), ''),
+            'condition': condition,
+            'expiry': '',
+            'notes': '',
+          });
+        }
+      }
+      return items;
+    }
+
+    return items;
+  }
+
+  // تحويل هيدر العمود لاسم منتج نظيف
+  String _headerToProductName(String header) {
+    // إزالة كلمات الحالة
+    String name = header
+        .replaceAll('(جديد)', '')
+        .replaceAll('(مستخدم)', '')
+        .replaceAll('جديد', '')
+        .replaceAll('مستخدم', '')
+        .trim();
+
+    // تحويل اختصارات معروفة
+    final Map<String, String> knownProducts = {
+      'dvr 2': 'Birdie DVR - 2 CAM',
+      'dvr 3': 'Birdie DVR - 3 CAM',
+      'مليسة m6': 'جهاز مليسة الإصدار السادس',
+      'مليسة m5': 'جهاز مليسة الإصدار الخامس',
+      'مس مون': 'Mismon/جهاز مس مون',
+      '4g 3cam': 'G4 - مرآة بيردي الذكية CAM3',
+      'تتبع 4g': 'GPS TRACKING - جهاز تتبع',
+      'تتبع صيني': 'WETRACK 2/جهاز تتبع صينى',
+      'شريحة': 'SIM CARD',
+      'smart card': 'SMART CARD',
+    };
+
+    for (final entry in knownProducts.entries) {
+      if (name.toLowerCase().contains(entry.key.toLowerCase())) {
+        return entry.value;
+      }
+    }
+
+    return name.isEmpty ? 'غير محدد' : name;
+  }
+
+  // ============================================================
+  // استيراد PDF
+  // ============================================================
+  Future<void> _importFromPdf() async {
+    setState(() {
+      _loading = true;
+      _status = 'جاري اختيار الملف...';
+    });
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf'],
       );
-
       if (result == null) {
-        setState(() { _loading = false; _status = ''; });
+        setState(() {
+          _loading = false;
+          _status = '';
+        });
         return;
       }
 
       final file = File(result.files.single.path!);
       final bytes = await file.readAsBytes();
       final document = PdfDocument(inputBytes: bytes);
-
       final extractor = PdfTextExtractor(document);
       final text = extractor.extractText();
       document.dispose();
@@ -119,8 +312,10 @@ class _ImportScreenState extends State<ImportScreen> {
       setState(() {
         _loading = false;
         _previewItems = items;
-        _showPreview = true;
-        _status = 'تم قراءة ${items.length} عنصر من PDF';
+        _showPreview = items.isNotEmpty;
+        _status = items.isEmpty
+            ? 'مش قادر يقرأ الملف'
+            : 'تم قراءة ${items.length} عنصر من PDF';
       });
     } catch (e) {
       setState(() {
@@ -131,93 +326,288 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   List<Map<String, String>> _parsePdfText(String text) {
-    final items = <Map<String, String>>[];
-    final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    final lines = text
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
 
-    // قراءة الـ PDF بتاعك - كل سطر فيه: منتج + مخزن + serial + ملاحظات + كمية
+    // ============================================================
+    // نوع 1: Delivery Slip - فيه "Lot/Serial Number" أو "Shipping Date"
+    // ============================================================
+    if (lines.any((l) =>
+        l.contains('Lot/Serial Number') ||
+        l.contains('Shipping Date') ||
+        RegExp(r'INT/\d+').hasMatch(l) ||
+        RegExp(r'W\\H\d+/INT').hasMatch(l))) {
+      return _parseDeliverySlip(lines);
+    }
+
+    // ============================================================
+    // نوع 2: SMART CARD style - سطر أول اسم منتج + سيريالات فقط
+    // ============================================================
+    if (lines.length >= 2) {
+      final firstLine = lines[0].trim();
+      final restAreNumbers = lines
+          .skip(1)
+          .where((l) => l.isNotEmpty)
+          .every((l) => RegExp(r'^\d[\d\s]*$').hasMatch(l));
+
+      if (restAreNumbers &&
+          firstLine.isNotEmpty &&
+          !firstLine.contains('/') &&
+          lines.length > 2) {
+        return _parseSimpleSerialList(lines);
+      }
+    }
+
+    // ============================================================
+    // نوع 3: جرد المخزن - النوع القديم
+    // ============================================================
+    return _parseWarehouseInventory(lines);
+  }
+
+  // ============================================================
+  // Parser: Delivery Slip
+  // الشكل: Product | Lot/Serial Number | Quantity (1.000 Units)
+  // ============================================================
+  List<Map<String, String>> _parseDeliverySlip(List<String> lines) {
+    final items = <Map<String, String>>[];
+
+    // استخرج تاريخ الشحن
+    String shippingDate = '';
+    for (int i = 0; i < lines.length; i++) {
+      if (lines[i].contains('Shipping Date') && i + 1 < lines.length) {
+        final nextLine = lines[i + 1].trim();
+        if (RegExp(r'\d{2}/\d{2}/\d{4}').hasMatch(nextLine)) {
+          shippingDate = nextLine;
+          break;
+        }
+      }
+    }
+
+    // استخرج رقم المخزن
+    String warehouse = 'مخزن محمد مرسي';
+    for (final l in lines) {
+      if (RegExp(r'W\\?H42').hasMatch(l)) {
+        warehouse = 'WH42/مخزن محمد مرسي';
+        break;
+      }
+      if (RegExp(r'W\\?H32').hasMatch(l)) {
+        warehouse = 'WH32/مخزن محمد مرسي';
+        break;
+      }
+    }
+
+    final serialPattern = RegExp(r'\b(\d{6,25})\b');
+    final quantityPattern = RegExp(r'1\.000\s*Units', caseSensitive: false);
+    final skipPatterns = [
+      'Lot/Serial Number', 'Quantity', 'Product', 'Shipping Date',
+      'مؤسسة', 'الطريق', 'Saudi Arabia', 'CR No', 'Vat No',
+      'Page:', 'الرقم الضريبي', '13214', '1010535067', 'Riyadh',
+    ];
+
+    String currentProduct = '';
+
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
 
-      // تجاهل الهيدر والسطور الفارغة
-      if (line.contains('الموقع') || line.contains('المنتج') ||
-          line.contains('ملاحظات') || line.contains('الكمية')) continue;
+      // تجاهل الهيدر والفوتر
+      if (skipPatterns.any((p) => line.contains(p))) continue;
+      if (line.length < 3) continue;
 
-      // ابحث عن السيريال (أرقام أو حروف وأرقام)
-      final serialPattern = RegExp(r'\b([A-Za-z0-9]{5,25})\b');
-      final serialMatches = serialPattern.allMatches(line);
+      final serialMatches = serialPattern.allMatches(line).toList();
 
-      // ابحث عن اسم المنتج (نص عربي أو إنجليزي)
-      String product = '';
-      String serial = '';
-      String notes = '';
-      String warehouse = 'WH32/مخزن محمد مرسي';
-
-      // استخرج المخزن
-      if (line.contains('مخزن')) {
-        final whMatch = RegExp(r'(WH\d+/[^\d]+)').firstMatch(line);
-        if (whMatch != null) warehouse = whMatch.group(1)?.trim() ?? warehouse;
-      }
-
-      // استخرج السيريال
-      if (serialMatches.isNotEmpty) {
-        serial = serialMatches.first.group(1) ?? '';
-      }
-
-      // استخرج الملاحظات الشائعة
-      if (line.contains('مستخدم')) notes = 'مستخدم';
-      else if (line.contains('مباع') || line.contains('باع')) notes = 'مباع';
-      else if (line.contains('عاطل')) notes = 'عاطل';
-
-      // حدد المنتج من السطر السابق لو مش في نفس السطر
-      if (i > 0) {
-        final prevLine = lines[i - 1];
-        if (prevLine.contains('/') && !prevLine.contains('مخزن')) {
-          product = prevLine.split('/').first.trim();
+      if (serialMatches.isEmpty) {
+        // سطر منتج فقط
+        if (!quantityPattern.hasMatch(line) && line.length > 3) {
+          final cleaned = _cleanName(line);
+          if (cleaned.isNotEmpty) currentProduct = cleaned;
         }
+        continue;
       }
 
-      // لو في السطر نفسه منتج وسيريال
-      final productMatch = RegExp(r'^([A-Za-z\s\-]+(?:/[^\d]+)?)\s').firstMatch(line);
-      if (productMatch != null && product.isEmpty) {
-        product = productMatch.group(1)?.trim() ?? '';
-      }
+      // استخرج اسم المنتج من السطر
+      String productInLine = line
+          .replaceAll(serialPattern, '')
+          .replaceAll(quantityPattern, '')
+          .replaceAll(RegExp(r'[\d\.\,]+'), '')
+          .replaceAll('Units', '')
+          .trim();
+      productInLine = _cleanName(productInLine);
+      if (productInLine.isNotEmpty) currentProduct = productInLine;
 
-      if (product.isEmpty && serial.isEmpty) continue;
+      final product =
+          currentProduct.isEmpty ? 'غير محدد' : currentProduct;
+
+      for (final match in serialMatches) {
+        final serial = match.group(1)!;
+        if (serial.length < 6) continue;
+
+        items.add({
+          'product': product,
+          'warehouse': warehouse,
+          'serial': serial,
+          'condition': 'جديد',
+          'expiry': '',
+          'notes': shippingDate.isNotEmpty ? 'شحن: $shippingDate' : '',
+        });
+      }
+    }
+
+    return items;
+  }
+
+  // ============================================================
+  // Parser: SMART CARD / Simple serial list
+  // الشكل: اسم المنتج في أول سطر، باقي السطور سيريالات
+  // ============================================================
+  List<Map<String, String>> _parseSimpleSerialList(List<String> lines) {
+    final items = <Map<String, String>>[];
+    if (lines.isEmpty) return items;
+
+    final productName = lines[0].trim();
+
+    for (int i = 1; i < lines.length; i++) {
+      final serial = lines[i].trim().replaceAll(' ', '');
       if (serial.isEmpty) continue;
+      if (!RegExp(r'^\d{5,}$').hasMatch(serial)) continue;
 
       items.add({
-        'product': product.isEmpty ? 'غير محدد' : product,
-        'warehouse': warehouse,
+        'product': productName,
+        'warehouse': 'WH32/مخزن محمد مرسي',
         'serial': serial,
-        'condition': notes.contains('عاطل') ? 'تالف' :
-                     notes.contains('مستخدم') ? 'مستخدم' : 'جديد',
+        'condition': 'جديد',
         'expiry': '',
-        'notes': notes,
+        'notes': '',
       });
     }
 
     return items;
   }
 
-  Future<void> _saveAllItems() async {
-    setState(() { _loading = true; _status = 'جاري الحفظ...'; });
+  // ============================================================
+  // Parser: Warehouse Inventory (جرد المخزن القديم)
+  // ============================================================
+  List<Map<String, String>> _parseWarehouseInventory(List<String> lines) {
+    final items = <Map<String, String>>[];
+    final serialPattern = RegExp(r'\b(\d{5,25})\b');
+    final datePattern = RegExp(r'\d{1,2}/\d{1,2}/\d{4}');
 
+    String currentProduct = '';
+    String currentWarehouse = 'WH32/مخزن محمد مرسي';
+
+    final conditionMap = {
+      'مستخدم': 'مستخدم',
+      'تالف': 'تالف',
+      'عاطل': 'تالف',
+      'مباع': 'مستخدم',
+      'scrap': 'تالف',
+    };
+
+    final skipWords = [
+      'الموقع', 'المنتج', 'ملاحظات', 'الكمية', 'الدليل',
+      'رجاء', 'المراجعة', 'التوقيع', 'Product', 'Quantity',
+      'Lot', 'Serial', 'Number', 'Units',
+    ];
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (skipWords.any((w) => line.contains(w))) continue;
+      if (line.length < 3) continue;
+
+      // استخرج المخزن
+      final whMatch = RegExp(r'W[\\\/]?H(\d+)', caseSensitive: false)
+          .firstMatch(line);
+      if (whMatch != null) {
+        currentWarehouse = 'WH${whMatch.group(1)}/مخزن محمد مرسي';
+      }
+
+      // استخرج الحالة
+      String condition = 'جديد';
+      String notes = '';
+      for (final entry in conditionMap.entries) {
+        if (line.toLowerCase().contains(entry.key)) {
+          condition = entry.value;
+          notes = entry.key;
+          break;
+        }
+      }
+
+      // استخرج تاريخ الصلاحية
+      String expiry = '';
+      final dateMatch = datePattern.firstMatch(line);
+      if (dateMatch != null) expiry = dateMatch.group(0)!;
+
+      // استخرج السيريال
+      final serialMatches = serialPattern.allMatches(line).toList();
+      if (serialMatches.isEmpty) {
+        final cleaned = _cleanName(line);
+        if (cleaned.length > 2) currentProduct = cleaned;
+        continue;
+      }
+
+      // استخرج المنتج من السطر
+      String productInLine = line
+          .replaceAll(serialPattern, '')
+          .replaceAll(datePattern, '')
+          .replaceAll(RegExp(r'[\\\/\d\.\,]'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      productInLine = _cleanName(productInLine);
+      if (productInLine.length > 2) currentProduct = productInLine;
+
+      for (final match in serialMatches) {
+        final serial = match.group(1)!;
+        if (serial.length < 5) continue;
+        items.add({
+          'product': currentProduct.isEmpty ? 'غير محدد' : currentProduct,
+          'warehouse': currentWarehouse,
+          'serial': serial,
+          'condition': condition,
+          'expiry': expiry,
+          'notes': notes,
+        });
+      }
+    }
+
+    return items;
+  }
+
+  // تنظيف الأسماء
+  String _cleanName(String name) {
+    return name
+        .replaceAll(RegExp(r'[\\\/\|\d]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'^[\s\-]+|[\s\-]+$'), '')
+        .trim();
+  }
+
+  // ============================================================
+  // حفظ البيانات
+  // ============================================================
+  Future<void> _saveAllItems() async {
+    setState(() {
+      _loading = true;
+      _status = 'جاري الحفظ...';
+    });
     int saved = 0;
     for (final item in _previewItems) {
       try {
         await DatabaseHelper.instance.insertItem(InventoryItem(
-          warehouseName: item['warehouse'] ?? 'WH32/مخزن محمد مرسي',
+          warehouseName:
+              item['warehouse'] ?? 'WH32/مخزن محمد مرسي',
           productName: item['product'] ?? 'غير محدد',
           serial: item['serial']?.isEmpty == true ? null : item['serial'],
           condition: item['condition'] ?? 'جديد',
-          expiryDate: item['expiry']?.isEmpty == true ? null : item['expiry'],
+          expiryDate:
+              item['expiry']?.isEmpty == true ? null : item['expiry'],
           notes: item['notes']?.isEmpty == true ? null : item['notes'],
           inventoryDate: _selectedDate,
         ));
         saved++;
       } catch (_) {}
     }
-
     setState(() {
       _loading = false;
       _showPreview = false;
@@ -247,6 +637,42 @@ class _ImportScreenState extends State<ImportScreen> {
     return date;
   }
 
+  void _deleteItem(int index) {
+    setState(() {
+      _previewItems.removeAt(index);
+      _status = 'تم قراءة ${_previewItems.length} عنصر';
+    });
+  }
+
+  Future<void> _deleteAll() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد'),
+        content: const Text('هتحذف كل العناصر؟'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('لأ')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white),
+            child: const Text('حذف الكل'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      setState(() {
+        _showPreview = false;
+        _previewItems = [];
+        _status = '';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -262,9 +688,11 @@ class _ImportScreenState extends State<ImportScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const CircularProgressIndicator(color: Color(0xFF1A237E)),
+                    const CircularProgressIndicator(
+                        color: Color(0xFF1A237E)),
                     const SizedBox(height: 16),
-                    Text(_status, style: const TextStyle(fontSize: 16)),
+                    Text(_status,
+                        style: const TextStyle(fontSize: 16)),
                   ],
                 ),
               )
@@ -290,6 +718,27 @@ class _ImportScreenState extends State<ImportScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    // معلومة للمستخدم
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('📋 الأشكال المدعومة:',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          SizedBox(height: 4),
+                          Text('Excel: شيت المخازن، جرد الجهاز، DVR، جرد محمد مرسي'),
+                          Text('PDF: Delivery Slip، SMART CARD، جرد المخزن'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     // استيراد من Excel
                     ElevatedButton.icon(
                       onPressed: _importFromExcel,
@@ -299,7 +748,8 @@ class _ImportScreenState extends State<ImportScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -315,7 +765,8 @@ class _ImportScreenState extends State<ImportScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -328,14 +779,16 @@ class _ImportScreenState extends State<ImportScreen> {
                         decoration: BoxDecoration(
                           color: _status.contains('✅')
                               ? Colors.green.shade50
-                              : _status.contains('خطأ')
+                              : _status.contains('خطأ') ||
+                                      _status.contains('مش')
                                   ? Colors.red.shade50
                                   : Colors.blue.shade50,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: _status.contains('✅')
                                 ? Colors.green
-                                : _status.contains('خطأ')
+                                : _status.contains('خطأ') ||
+                                        _status.contains('مش')
                                     ? Colors.red
                                     : Colors.blue,
                           ),
@@ -347,7 +800,8 @@ class _ImportScreenState extends State<ImportScreen> {
                             fontSize: 15,
                             color: _status.contains('✅')
                                 ? Colors.green.shade700
-                                : _status.contains('خطأ')
+                                : _status.contains('خطأ') ||
+                                        _status.contains('مش')
                                     ? Colors.red.shade700
                                     : Colors.blue.shade700,
                           ),
@@ -360,12 +814,21 @@ class _ImportScreenState extends State<ImportScreen> {
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          Text(
-                            'معاينة (${_previewItems.length} عنصر)',
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
+                          Expanded(
+                            child: Text(
+                              'معاينة (${_previewItems.length} عنصر)',
+                              style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold),
+                            ),
                           ),
-                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: _deleteAll,
+                            icon: const Icon(Icons.delete_sweep,
+                                size: 18, color: Colors.red),
+                            label: const Text('حذف الكل',
+                                style: TextStyle(color: Colors.red)),
+                          ),
                           TextButton.icon(
                             onPressed: () => setState(() {
                               _showPreview = false;
@@ -381,84 +844,144 @@ class _ImportScreenState extends State<ImportScreen> {
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _previewItems.length > 50
-                            ? 50
+                        itemCount: _previewItems.length > 100
+                            ? 100
                             : _previewItems.length,
                         itemBuilder: (_, i) {
                           final item = _previewItems[i];
-                          final condColor = item['condition'] == 'جديد'
-                              ? Colors.green
-                              : item['condition'] == 'مستخدم'
-                                  ? Colors.orange
-                                  : Colors.red;
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 6),
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 4,
-                                    height: 50,
-                                    decoration: BoxDecoration(
-                                      color: condColor,
-                                      borderRadius: BorderRadius.circular(4),
+                          final condColor =
+                              item['condition'] == 'جديد'
+                                  ? Colors.green
+                                  : item['condition'] == 'مستخدم'
+                                      ? Colors.orange
+                                      : Colors.red;
+                          return Dismissible(
+                            key: Key(
+                                '${item['serial']}_${item['product']}_$i'),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius:
+                                    BorderRadius.circular(10),
+                              ),
+                              alignment: Alignment.centerLeft,
+                              padding:
+                                  const EdgeInsets.only(left: 20),
+                              child: const Icon(Icons.delete,
+                                  color: Colors.white, size: 28),
+                            ),
+                            onDismissed: (_) => _deleteItem(i),
+                            child: Card(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(10)),
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 4,
+                                      height: 50,
+                                      decoration: BoxDecoration(
+                                        color: condColor,
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(item['product'] ?? '',
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item['product'] ?? '',
                                             style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13)),
-                                        Text(
+                                                fontWeight:
+                                                    FontWeight.bold,
+                                                fontSize: 13),
+                                            maxLines: 1,
+                                            overflow:
+                                                TextOverflow.ellipsis,
+                                          ),
+                                          Text(
                                             '${item['serial']} • ${item['warehouse']}',
                                             style: TextStyle(
                                                 fontSize: 11,
-                                                color: Colors.grey.shade600)),
-                                        if (item['notes']?.isNotEmpty == true)
-                                          Text(item['notes']!,
+                                                color: Colors
+                                                    .grey.shade600),
+                                            maxLines: 1,
+                                            overflow:
+                                                TextOverflow.ellipsis,
+                                          ),
+                                          if (item['notes']
+                                                  ?.isNotEmpty ==
+                                              true)
+                                            Text(
+                                              item['notes']!,
                                               style: TextStyle(
                                                   fontSize: 11,
-                                                  color: Colors.orange.shade700)),
+                                                  color: Colors
+                                                      .orange.shade700),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    Column(
+                                      children: [
+                                        Container(
+                                          padding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: condColor
+                                                .withOpacity(0.12),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            item['condition'] ?? 'جديد',
+                                            style: TextStyle(
+                                                color: condColor,
+                                                fontSize: 11,
+                                                fontWeight:
+                                                    FontWeight.bold),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                              Icons.delete_outline,
+                                              color: Colors.red.shade300,
+                                              size: 20),
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints(),
+                                          onPressed: () =>
+                                              _deleteItem(i),
+                                        ),
                                       ],
                                     ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: condColor.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      item['condition'] ?? 'جديد',
-                                      style: TextStyle(
-                                          color: condColor,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           );
                         },
                       ),
-                      if (_previewItems.length > 50)
+                      if (_previewItems.length > 100)
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 8),
                           child: Text(
-                            '... و ${_previewItems.length - 50} عنصر إضافي',
+                            '... و ${_previewItems.length - 100} عنصر إضافي',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey.shade600),
+                            style:
+                                TextStyle(color: Colors.grey.shade600),
                           ),
                         ),
                       const SizedBox(height: 16),
@@ -471,7 +994,8 @@ class _ImportScreenState extends State<ImportScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1A237E),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 16),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
                         ),
