@@ -3,6 +3,7 @@ import 'database.dart';
 import 'scanner_screen.dart';
 import 'inventory_screen.dart';
 import 'export_helper.dart';
+import 'manage_screen.dart';
 
 void main() {
   runApp(const InventoryApp());
@@ -190,6 +191,16 @@ class _HomeScreenState extends State<HomeScreen> {
           Text('جرد المخزون', style: TextStyle(fontWeight: FontWeight.bold)),
         ]),
         actions: [
+          IconButton(
+  icon: const Icon(Icons.settings, color: Colors.white),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ManageScreen()),
+    );
+  },
+  tooltip: 'إدارة القوائم',
+),
           PopupMenuButton<String>(
   icon: const Icon(Icons.file_download, color: Colors.white),
   onSelected: (val) async {
