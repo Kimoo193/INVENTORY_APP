@@ -114,7 +114,7 @@ class _ImportScreenState extends State<ImportScreen> {
         serial = serial.replaceAll(RegExp(r'^[A-Z0-9]+:'), '');
         items.add({
           'product': _cleanName(product),
-          'warehouse': location.isEmpty ? 'WH32/مخزن محمد مرسي' : location,
+          'warehouse': location.isEmpty ? 'Stock 1' : location,
           'serial': serial,
           'condition': 'جديد',
           'expiry': '',
@@ -142,7 +142,7 @@ class _ImportScreenState extends State<ImportScreen> {
         if (product.isEmpty) continue;
         items.add({
           'product': _cleanName(product),
-          'warehouse': 'WH32/مخزن محمد مرسي',
+          'warehouse': 'Stock 1',
           'serial': serial,
           'condition': 'جديد',
           'expiry': '',
@@ -154,26 +154,31 @@ class _ImportScreenState extends State<ImportScreen> {
 
     // ============================================================
     // شكل 3: المنتج | الموقع | السريال | حالة الجهاز | تاريخ صلاحية
-    // مثال: جرد_5-11، 1محمد_مرسي.xlsx
+    // يشمل: جرد_5-11، 1محمد_مرسي، والشكل المُصدَّر من التطبيق
+    // مثال التطبيق: # | المنتج | المخزن | السريال | الحالة | تاريخ الصلاحية | ملاحظات
     // ============================================================
     if (headers.any((h) =>
         h.contains('المنتج') || h.contains('منتج'))) {
       int productCol = headers.indexWhere((h) =>
           h.contains('المنتج') || h.contains('منتج'));
       int locationCol = headers.indexWhere((h) =>
-          h.contains('الموقع') || h.contains('موقع'));
+          h.contains('المخزن') || h.contains('الموقع') || h.contains('موقع'));
       int serialCol = headers.indexWhere((h) =>
           h.contains('السريال') || h.contains('سريال') || h.contains('السريل'));
       int conditionCol = headers.indexWhere((h) =>
-          h.contains('حالة') || h.contains('ملاحظات') || h.contains('ملحظات'));
+          h.contains('الحالة') || h.contains('حالة'));
       int expiryCol = headers.indexWhere((h) =>
           h.contains('تاريخ') || h.contains('صلاحية'));
+      int notesCol = headers.indexWhere((h) =>
+          h.contains('ملاحظات') || h.contains('ملحظات'));
 
       for (int i = 1; i < sheet.rows.length; i++) {
         final row = sheet.rows[i];
         final product =
             getCellStr(row, productCol == -1 ? 0 : productCol);
         if (product.isEmpty) continue;
+        // تجاهل سطور الحذف (بتبدأ بـ [محذوف])
+        if (product.startsWith('[محذوف]')) continue;
 
         final location =
             getCellStr(row, locationCol == -1 ? 1 : locationCol);
@@ -181,14 +186,19 @@ class _ImportScreenState extends State<ImportScreen> {
             getCellStr(row, serialCol == -1 ? 2 : serialCol);
         final condRaw =
             getCellStr(row, conditionCol == -1 ? 3 : conditionCol);
-        final expiry =
+        String expiry =
             getCellStr(row, expiryCol == -1 ? 4 : expiryCol);
+        final notesRaw =
+            getCellStr(row, notesCol == -1 ? 5 : notesCol);
+
+        // تجاهل القيم الفارغة الوهمية
+        if (expiry == '-') expiry = '';
+        final notes = notesRaw == '-' ? '' : notesRaw;
 
         // نظّف السيريال
         serial = serial.replaceAll(RegExp(r'^[A-Z0-9]+:'), '');
 
         String condition = 'جديد';
-        String notes = condRaw;
         if (condRaw.contains('مستخدم')) condition = 'مستخدم';
         else if (condRaw.contains('تالف') || condRaw.contains('عاطل')) {
           condition = 'تالف';
@@ -196,11 +206,11 @@ class _ImportScreenState extends State<ImportScreen> {
 
         items.add({
           'product': _cleanName(product),
-          'warehouse': location.isEmpty ? 'WH32/مخزن محمد مرسي' : location,
+          'warehouse': location.isEmpty ? 'WH32/Stock 1' : location,
           'serial': serial,
           'condition': condition,
           'expiry': expiry,
-          'notes': notes == condition ? '' : notes,
+          'notes': notes,
         });
       }
       return items;
@@ -232,7 +242,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
           items.add({
             'product': _headerToProductName(productHeader),
-            'warehouse': 'WH32/مخزن محمد مرسي',
+            'warehouse': 'Stock 1',
             'serial': serial.replaceAll(RegExp(r'^[A-Z0-9]+:'), ''),
             'condition': condition,
             'expiry': '',
@@ -394,7 +404,7 @@ class _ImportScreenState extends State<ImportScreen> {
         break;
       }
       if (RegExp(r'W\\?H32').hasMatch(l)) {
-        warehouse = 'WH32/مخزن محمد مرسي';
+        warehouse = 'Stock 1';
         break;
       }
     }
@@ -475,7 +485,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
       items.add({
         'product': productName,
-        'warehouse': 'WH32/مخزن محمد مرسي',
+        'warehouse': 'Stock 1',
         'serial': serial,
         'condition': 'جديد',
         'expiry': '',
@@ -495,7 +505,7 @@ class _ImportScreenState extends State<ImportScreen> {
     final datePattern = RegExp(r'\d{1,2}/\d{1,2}/\d{4}');
 
     String currentProduct = '';
-    String currentWarehouse = 'WH32/مخزن محمد مرسي';
+    String currentWarehouse = 'Stock 1';
 
     final conditionMap = {
       'مستخدم': 'مستخدم',
@@ -596,7 +606,7 @@ class _ImportScreenState extends State<ImportScreen> {
       try {
         await DatabaseHelper.instance.insertItem(InventoryItem(
           warehouseName:
-              item['warehouse'] ?? 'WH32/مخزن محمد مرسي',
+              item['warehouse'] ?? 'Stock 1',
           productName: item['product'] ?? 'غير محدد',
           serial: item['serial']?.isEmpty == true ? null : item['serial'],
           condition: item['condition'] ?? 'جديد',

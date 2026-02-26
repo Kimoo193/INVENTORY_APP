@@ -5,6 +5,9 @@ import 'inventory_screen.dart';
 import 'export_helper.dart';
 import 'manage_screen.dart';
 import 'import_screen.dart';
+import 'delete_dialog.dart';
+import 'deleted_items_screen.dart';
+
 
 void main() {
   runApp(const InventoryApp());
@@ -192,6 +195,12 @@ class _HomeScreenState extends State<HomeScreen> {
           Text('جرد المخزون', style: TextStyle(fontWeight: FontWeight.bold)),
         ]),
         actions: [
+          IconButton(
+  icon: const Icon(Icons.delete_sweep, color: Colors.white),
+  onPressed: () => Navigator.push(context,
+    MaterialPageRoute(builder: (_) => const DeletedItemsScreen())),
+  tooltip: 'سجل الحذف',
+),
          IconButton(
   icon: const Icon(Icons.upload_file, color: Colors.white),
   onPressed: () async {
