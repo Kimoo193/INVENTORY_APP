@@ -18,6 +18,8 @@ dependencies:
   excel: ^4.0.6
   share_plus: ^10.0.0
   path: ^1.9.0
+  file_picker: ^8.1.2
+  syncfusion_flutter_pdf: ^27.1.48
 
 dev_dependencies:
   flutter_test:
