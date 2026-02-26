@@ -104,7 +104,7 @@ Future<bool> showDeleteWithReasonDialog(
 
   if (confirm != true) return false;
 
-  // احفظ في جدول deleted_items وامسح من inventory_items
+  // احفظ في جدول deleted_items وامسح من inventory
   final db = await DatabaseHelper.instance.database;
   await db.insert('deleted_items', {
     'warehouse_name': item.warehouseName,
@@ -120,7 +120,7 @@ Future<bool> showDeleteWithReasonDialog(
   });
 
   if (item.id != null) {
-    await db.delete('inventory_items',
+    await db.delete('inventory',
         where: 'id = ?', whereArgs: [item.id]);
   }
 
