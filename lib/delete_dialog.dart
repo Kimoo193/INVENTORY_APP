@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'database.dart';
+import 'firestore_service.dart';
 import 'auth_service.dart';
 import 'notification_service.dart';
 
@@ -84,7 +84,7 @@ Future<bool> showDeleteWithReasonDialog(
   final currentUser = await AuthService.instance.getCurrentUser();
 
   // ✅ حذف مع تسجيل مين حذف
-  await DatabaseHelper.instance.deleteWithReason(
+  await FirestoreService.instance.deleteWithReason(
     item,
     reason: selectedReason,
     extraNotes: notesController.text.trim(),

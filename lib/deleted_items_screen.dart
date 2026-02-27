@@ -3,7 +3,7 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
-import 'database.dart';
+import 'firestore_service.dart';
 import 'auth_service.dart';
 
 class DeletedItemsScreen extends StatefulWidget {
@@ -35,11 +35,11 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
 
     if (_currentUser != null && !_currentUser!.isAdmin) {
       // ✅ User: يشوف بس اللي هو حذفه
-      results = await DatabaseHelper.instance
+      results = await FirestoreService.instance
           .getDeletedItemsByUser(_currentUser!.uid);
     } else {
       // Admin: يشوف كل السجل
-      results = await DatabaseHelper.instance.getDeletedItems();
+      results = await FirestoreService.instance.getDeletedItems();
     }
 
     setState(() {
@@ -74,7 +74,7 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
     );
     if (confirm != true) return;
 
-    await DatabaseHelper.instance.restoreItem(item);
+    await FirestoreService.instance.restoreItem(item);
     await _loadDeletedItems();
 
     if (mounted) {
@@ -112,7 +112,7 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
       ),
     );
     if (confirm != true) return;
-    await DatabaseHelper.instance.permanentDeleteItem(item['id']);
+    await FirestoreService.instance.permanentDeleteItem(item['id']);
     await _loadDeletedItems();
   }
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
-import 'database.dart';
+import 'firestore_service.dart';
 import 'auth_service.dart';
 import 'notification_service.dart'; // ✅ إشعارات
 
@@ -309,8 +309,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   }
 
   Future<void> _loadDropdowns() async {
-    final warehouses = await DatabaseHelper.instance.getWarehouses();
-    final products = await DatabaseHelper.instance.getProducts();
+    final warehouses = await FirestoreService.instance.getWarehouses();
+    final products = await FirestoreService.instance.getProducts();
     setState(() {
       _warehouses = warehouses;
       _products = products;
@@ -523,7 +523,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
       ),
     );
     if (result != null && result.isNotEmpty) {
-      await DatabaseHelper.instance.addWarehouse(result);
+      await FirestoreService.instance.addWarehouse(result);
       await _loadDropdowns();
       setState(() => _selectedWarehouse = result);
     }
@@ -553,7 +553,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
       ),
     );
     if (result != null && result.isNotEmpty) {
-      await DatabaseHelper.instance.addProduct(result);
+      await FirestoreService.instance.addProduct(result);
       await _loadDropdowns();
       setState(() => _selectedProduct = result);
     }
@@ -619,9 +619,9 @@ class _AddItemScreenState extends State<AddItemScreen> {
       addedByUid: currentUser.uid, // ✅ سجّل مين أضاف
     );
     if (widget.itemToEdit != null) {
-      await DatabaseHelper.instance.updateItem(item);
+      await FirestoreService.instance.updateItem(item);
     } else {
-      await DatabaseHelper.instance.insertItem(item);
+      await FirestoreService.instance.insertItem(item);
       // ✅ إشعار للـ Admins عند إضافة قطعة جديدة (بس لو المستخدم مش Admin)
       if (!currentUser.isAdmin) {
         NotificationService.instance.notifyItemAdded(

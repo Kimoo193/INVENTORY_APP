@@ -19,7 +19,9 @@ class AppUser {
   final bool canManage;
   final bool isActive;
   final DateTime? createdAt;
-  final String? assignedWarehouse; // ✅ المخزن المخصص للـ user
+  final String? assignedWarehouse;
+  final String? adminUid;  // ✅ الـ Admin اللي الـ User ده تابع له
+  final String? createdBy; // ✅ uid اللي أنشأ الحساب ده
 
   AppUser({
     required this.uid,
@@ -35,6 +37,8 @@ class AppUser {
     this.isActive = true,
     this.createdAt,
     this.assignedWarehouse,
+    this.adminUid,
+    this.createdBy,
   });
 
   factory AppUser.fromMap(Map<String, dynamic> map, String uid) {
@@ -54,6 +58,8 @@ class AppUser {
           ? (map['createdAt'] as Timestamp).toDate()
           : null,
       assignedWarehouse: map['assignedWarehouse'],
+      adminUid: map['adminUid'],
+      createdBy: map['createdBy'],
     );
   }
 
@@ -73,6 +79,8 @@ class AppUser {
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
       'assignedWarehouse': assignedWarehouse,
+      'adminUid': adminUid,
+      'createdBy': createdBy,
     };
   }
 
@@ -168,28 +176,32 @@ class AuthService {
 
   Future<AppUser> createAdmin({
     required String email, required String password, required String name,
+    String? createdBy,
   }) async {
     return await _createUserSafely(
       email: email, password: password, name: name, role: 'admin',
       permissions: {'canAdd':true,'canEdit':true,'canDelete':true,
         'canExport':true,'canImport':true,'canManage':true},
+      createdBy: createdBy,
     );
   }
 
   Future<AppUser> createUser({
     required String email, required String password, required String name,
     required Map<String, bool> permissions, String? assignedWarehouse,
+    String? adminUid, String? createdBy,
   }) async {
     return await _createUserSafely(
       email: email, password: password, name: name, role: 'user',
       permissions: permissions, assignedWarehouse: assignedWarehouse,
+      adminUid: adminUid, createdBy: createdBy,
     );
   }
 
   Future<AppUser> _createUserSafely({
     required String email, required String password, required String name,
     required String role, required Map<String, bool> permissions,
-    String? assignedWarehouse,
+    String? assignedWarehouse, String? adminUid, String? createdBy,
   }) async {
     FirebaseApp? tempApp;
     try {
@@ -213,6 +225,8 @@ class AuthService {
         canManage: permissions['canManage'] ?? false,
         isActive: true, createdAt: DateTime.now(),
         assignedWarehouse: assignedWarehouse,
+        adminUid: adminUid,
+        createdBy: createdBy,
       );
       await _db.collection('users').doc(cred.user!.uid).set(newUser.toMap());
       return newUser;
@@ -220,6 +234,35 @@ class AuthService {
       throw Exception(_authError(e.code));
     } finally {
       await tempApp?.delete();
+    }
+  }
+
+  /// ✅ جيب الـ Users التابعين لـ Admin معين
+  Future<List<AppUser>> getUsersByAdmin(String adminUid) async {
+    try {
+      // جيب Users اللي عندهم adminUid
+      final snap1 = await _db.collection('users')
+          .where('adminUid', isEqualTo: adminUid)
+          .get();
+      // جيب Users اللي عندهم createdBy (fallback للبيانات القديمة)
+      final snap2 = await _db.collection('users')
+          .where('createdBy', isEqualTo: adminUid)
+          .get();
+
+      // ادمج النتيجتين وشيل التكرار
+      final Map<String, AppUser> usersMap = {};
+      for (final doc in [...snap1.docs, ...snap2.docs]) {
+        final user = AppUser.fromMap(doc.data(), doc.id);
+        if (!user.isSuperAdmin && user.uid != adminUid) {
+          usersMap[doc.id] = user;
+        }
+      }
+      final users = usersMap.values.toList();
+      users.sort((a, b) => (b.createdAt ?? DateTime(0))
+          .compareTo(a.createdAt ?? DateTime(0)));
+      return users;
+    } catch (e) {
+      return [];
     }
   }
 

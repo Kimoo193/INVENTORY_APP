@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'database.dart';
+import 'firestore_service.dart';
 import 'scanner_screen.dart';
 import 'delete_dialog.dart';
 import 'auth_service.dart';
@@ -46,19 +46,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final user = widget.currentUser;
     List<InventoryItem> items;
 
-    if (user != null && user.hasAssignedWarehouse) {
-      // ✅ User مقيّد: يشوف بس اللي هو أضافه في مخزنه
-      items = await DatabaseHelper.instance.getItemsByUserAndWarehouse(
-        uid: user.uid,
-        warehouseName: user.assignedWarehouse!,
-        date: widget.selectedDate,
-      );
-    } else {
-      // Admin: يشوف كل حاجة
-      items = widget.selectedDate != null
-          ? await DatabaseHelper.instance.getItemsByDate(widget.selectedDate!)
-          : await DatabaseHelper.instance.getAllItems();
-    }
+    // ✅ FirestoreService بيتعامل مع الـ User المقيّد تلقائياً داخلياً
+    items = widget.selectedDate != null
+        ? await FirestoreService.instance.getItemsByDate(widget.selectedDate!)
+        : await FirestoreService.instance.getAllItems();
 
     setState(() {
       _items = items;
@@ -103,7 +94,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   // ✅ نقل من مخزن لمخزن (Admin فقط)
   Future<void> _moveItem(InventoryItem item) async {
-    final warehouses = await DatabaseHelper.instance.getWarehouses();
+    final warehouses = await FirestoreService.instance.getWarehouses();
     final otherWarehouses =
         warehouses.where((w) => w != item.warehouseName).toList();
 
@@ -142,7 +133,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
 
     if (selected != null && item.id != null) {
-      await DatabaseHelper.instance.moveItemToWarehouse(item.id!, selected);
+      // نقل للمخزن الجديد: تعديل الـ item
+      await FirestoreService.instance.updateItem(
+        item.copyWith(warehouseName: selected),
+      );
       _loadItems();
       widget.onRefresh?.call();
       if (mounted) {

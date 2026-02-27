@@ -66,7 +66,7 @@ class AuthWrapper extends StatelessWidget {
               _ensureUserDocument(snapshot.data!);
             }
 
-            return authenticatedHome;
+            return _SplashThenHome(home: authenticatedHome);
           },
         );
       },
@@ -77,5 +77,102 @@ class AuthWrapper extends StatelessWidget {
     try {
       await AuthService.instance.ensureUserDocument(firebaseUser);
     } catch (_) {}
+  }
+}
+
+/// ✅ يعرض السبلاش كل مرة يدخل فيها المستخدم، ثم ينتقل للـ Home
+class _SplashThenHome extends StatefulWidget {
+  final Widget home;
+  const _SplashThenHome({required this.home});
+
+  @override
+  State<_SplashThenHome> createState() => _SplashThenHomeState();
+}
+
+class _SplashThenHomeState extends State<_SplashThenHome> {
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => widget.home),
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A237E),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const Spacer(),
+            Center(
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.inventory_2,
+                    size: 70, color: Color(0xFF1A237E)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Karam Stock',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(50),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: const Text(
+                '🤍  اللهم صلِّ وسلم على نبينا محمد  🤍',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  height: 1.6,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const Spacer(),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 24),
+              child: Text(
+                'BY : Kareem Mohamed',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

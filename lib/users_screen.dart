@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'auth_service.dart';
-import 'database.dart';
+import 'firestore_service.dart';
 import 'notification_service.dart';
 
 class UsersScreen extends StatefulWidget {
@@ -25,10 +25,20 @@ class _UsersScreenState extends State<UsersScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     _currentUser = await AuthService.instance.getCurrentUser();
-    final users = await AuthService.instance.getAllUsers();
-    final warehouses = await DatabaseHelper.instance.getWarehouses();
+    List<AppUser> allUsers;
+    if (_currentUser?.isSuperAdmin == true) {
+      // Super Admin يشوف كل حاجة
+      allUsers = await AuthService.instance.getAllUsers();
+      allUsers = allUsers.where((u) => !u.isSuperAdmin).toList();
+    } else if (_currentUser?.isAdmin == true) {
+      // Admin يشوف بس Users بتوعه
+      allUsers = await AuthService.instance.getUsersByAdmin(_currentUser!.uid);
+    } else {
+      allUsers = [];
+    }
+    final warehouses = await FirestoreService.instance.getWarehouses();
     setState(() {
-      _users = users;
+      _users = allUsers;
       _warehouses = warehouses;
       _loading = false;
     });

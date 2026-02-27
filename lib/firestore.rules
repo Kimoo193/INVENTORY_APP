@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (getUserData().role == 'admin' || getUserData().role == 'superadmin');
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && getUserData().role == 'superadmin';
+    }
+
+    // ============================================================
+    // Users Collection
+    // ============================================================
+    match /users/{userId} {
+      allow read: if isAuthenticated() &&
+        (request.auth.uid == userId || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() &&
+        resource.data.role != 'superadmin';
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================
+    // Notifications Collection
+    // notifications/{uid}/items/{notifId}
+    //
+    // - الكتابة: أي user مسجل دخول (عشان يبعت إشعار للـ admins)
+    // - القراءة: صاحب الـ uid بس (كل admin يقرأ إشعاراته بس)
+    // - التعديل (mark as read): صاحب الـ uid بس
+    // ============================================================
+    match /notifications/{userId}/items/{notifId} {
+      // أي user مسجل دخول يقدر يكتب إشعار لأي admin
+      allow create: if isAuthenticated();
+
+      // بس صاحب الـ uid يقرأ ويعدّل إشعاراته
+      allow read, update: if isAuthenticated() &&
+        request.auth.uid == userId;
+
+      // مش بنسمح بحذف (الإشعارات بتتبقى كـ history)
+      allow delete: if isAdmin();
+    }
+
+    // ============================================================
+    // باقي الـ Collections
+    // ============================================================
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

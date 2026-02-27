@@ -3,7 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' hide Border;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'dart:io';
-import 'database.dart';
+import 'firestore_service.dart';
 import 'auth_service.dart';
 
 class ImportScreen extends StatefulWidget {
@@ -621,7 +621,7 @@ class _ImportScreenState extends State<ImportScreen> {
     int saved = 0;
     for (final item in _previewItems) {
       try {
-        await DatabaseHelper.instance.insertItem(InventoryItem(
+        await FirestoreService.instance.insertItem(InventoryItem(
           warehouseName:
               item['warehouse'] ?? 'Stock 1',
           productName: item['product'] ?? 'غير محدد',

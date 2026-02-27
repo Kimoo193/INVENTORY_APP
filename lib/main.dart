@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'database.dart';
+import 'firestore_service.dart';
+import 'migration_screen.dart' show MigrationScreen;
 import 'scanner_screen.dart';
 import 'inventory_screen.dart';
 import 'export_helper.dart';
@@ -185,12 +186,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
-    final dates = await DatabaseHelper.instance.getInventoryDates();
+    // ✅ تحقق لو في migration محتاج يتعمل
+    final isMigrated = await FirestoreService.instance.isMigrated();
+    if (!isMigrated && mounted) {
+      final user = await AuthService.instance.getCurrentUser();
+      if (user != null && user.isAdmin) {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => MigrationScreen()),
+        );
+        if (result != true) return; // لو ما اتعملش migration نوقف
+      }
+    }
+    final dates = await FirestoreService.instance.getInventoryDates();
     final today = InventoryItem.today();
     if (!dates.contains(today)) dates.insert(0, today);
     final selected = _selectedDate ?? today;
-    final stats =
-        await DatabaseHelper.instance.getStats(date: selected);
+    final stats = await FirestoreService.instance.getStats(date: selected);
     setState(() {
       _dates = dates;
       _selectedDate ??= today;
@@ -199,8 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refreshStats() async {
-    final stats =
-        await DatabaseHelper.instance.getStats(date: _selectedDate);
+    final stats = await FirestoreService.instance.getStats(date: _selectedDate);
     setState(() => _stats = stats);
   }
 
@@ -316,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   break;
                 case 'excel_today':
                   if (_selectedDate == null) return;
-                  final items = await DatabaseHelper.instance
+                  final items = await FirestoreService.instance
                       .getItemsByDate(_selectedDate!);
                   if (items.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -328,7 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   break;
                 case 'excel_all':
                   final items =
-                      await DatabaseHelper.instance.getAllItems();
+                      await FirestoreService.instance.getAllItems();
                   if (items.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(

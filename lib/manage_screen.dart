@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'database.dart';
+import 'firestore_service.dart';
 import 'auth_service.dart';
 
 class ManageScreen extends StatefulWidget {
@@ -41,8 +41,8 @@ class _ManageScreenState extends State<ManageScreen>
       return;
     }
     setState(() => _loading = true);
-    final warehouses = await DatabaseHelper.instance.getWarehouses();
-    final products = await DatabaseHelper.instance.getProducts();
+    final warehouses = await FirestoreService.instance.getWarehouses();
+    final products = await FirestoreService.instance.getProducts();
     setState(() {
       _warehouses = warehouses;
       _products = products;
@@ -70,8 +70,7 @@ class _ManageScreenState extends State<ManageScreen>
       ),
     );
     if (confirm == true) {
-      final db = await DatabaseHelper.instance.database;
-      await db.delete('warehouses', where: 'name = ?', whereArgs: [name]);
+      await FirestoreService.instance.deleteWarehouse(name);
       await _loadData();
     }
   }
@@ -96,8 +95,7 @@ class _ManageScreenState extends State<ManageScreen>
       ),
     );
     if (confirm == true) {
-      final db = await DatabaseHelper.instance.database;
-      await db.delete('products', where: 'name = ?', whereArgs: [name]);
+      await FirestoreService.instance.deleteProduct(name);
       await _loadData();
     }
   }
@@ -124,9 +122,7 @@ class _ManageScreenState extends State<ManageScreen>
       ),
     );
     if (result != null && result.isNotEmpty && result != oldName) {
-      final db = await DatabaseHelper.instance.database;
-      await db.update('warehouses', {'name': result},
-          where: 'name = ?', whereArgs: [oldName]);
+      await FirestoreService.instance.updateWarehouse(oldName, result);
       await _loadData();
     }
   }
@@ -153,9 +149,7 @@ class _ManageScreenState extends State<ManageScreen>
       ),
     );
     if (result != null && result.isNotEmpty && result != oldName) {
-      final db = await DatabaseHelper.instance.database;
-      await db.update('products', {'name': result},
-          where: 'name = ?', whereArgs: [oldName]);
+      await FirestoreService.instance.updateProduct(oldName, result);
       await _loadData();
     }
   }
@@ -182,7 +176,7 @@ class _ManageScreenState extends State<ManageScreen>
       ),
     );
     if (result != null && result.isNotEmpty) {
-      await DatabaseHelper.instance.addWarehouse(result);
+      await FirestoreService.instance.addWarehouse(result);
       await _loadData();
     }
   }
@@ -209,7 +203,7 @@ class _ManageScreenState extends State<ManageScreen>
       ),
     );
     if (result != null && result.isNotEmpty) {
-      await DatabaseHelper.instance.addProduct(result);
+      await FirestoreService.instance.addProduct(result);
       await _loadData();
     }
   }
