@@ -10,6 +10,7 @@ class InventoryItem {
   final String? expiryDate;
   final String? notes;
   final String inventoryDate;
+  final String? addedByUid; // ✅ جديد: مين أضاف القطعة
 
   InventoryItem({
     this.id,
@@ -20,6 +21,7 @@ class InventoryItem {
     this.expiryDate,
     this.notes,
     String? inventoryDate,
+    this.addedByUid,
   }) : inventoryDate = inventoryDate ?? today();
 
   static String today() {
@@ -37,6 +39,7 @@ class InventoryItem {
       'expiry_date': expiryDate,
       'notes': notes,
       'inventory_date': inventoryDate,
+      'added_by_uid': addedByUid,
     };
   }
 
@@ -50,6 +53,7 @@ class InventoryItem {
       expiryDate: map['expiry_date'],
       notes: map['notes'],
       inventoryDate: map['inventory_date'] ?? today(),
+      addedByUid: map['added_by_uid'],
     );
   }
 }
@@ -71,7 +75,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 3,
+      version: 4, // ✅ رفعنا الـ version
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -87,7 +91,8 @@ class DatabaseHelper {
         condition TEXT NOT NULL,
         expiry_date TEXT,
         notes TEXT,
-        inventory_date TEXT NOT NULL
+        inventory_date TEXT NOT NULL,
+        added_by_uid TEXT
       )
     ''');
     await db.execute('''
@@ -114,7 +119,9 @@ class DatabaseHelper {
         inventory_date TEXT,
         delete_reason TEXT,
         delete_notes TEXT,
-        deleted_at TEXT
+        deleted_at TEXT,
+        deleted_by_uid TEXT,
+        added_by_uid TEXT
       )
     ''');
     await _insertDefaultData(db);
@@ -126,13 +133,13 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE inventory ADD COLUMN notes TEXT');
       } catch (_) {}
       try {
-        await db.execute('ALTER TABLE inventory ADD COLUMN inventory_date TEXT');
+        await db.execute(
+            'ALTER TABLE inventory ADD COLUMN inventory_date TEXT');
       } catch (_) {}
       await db.rawUpdate(
           "UPDATE inventory SET inventory_date = '${InventoryItem.today()}' WHERE inventory_date IS NULL");
     }
     if (oldVersion < 3) {
-      // إضافة جدول الحذف
       await db.execute('''
         CREATE TABLE IF NOT EXISTS deleted_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,9 +155,23 @@ class DatabaseHelper {
           deleted_at TEXT
         )
       ''');
-      // إضافة Stock 1 كمخزن افتراضي لو مش موجود
       await db.insert('warehouses', {'name': 'WH32/Stock 1'},
           conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    if (oldVersion < 4) {
+      // ✅ إضافة حقل مين أضاف وحقل مين حذف
+      try {
+        await db.execute(
+            'ALTER TABLE inventory ADD COLUMN added_by_uid TEXT');
+      } catch (_) {}
+      try {
+        await db.execute(
+            'ALTER TABLE deleted_items ADD COLUMN deleted_by_uid TEXT');
+      } catch (_) {}
+      try {
+        await db.execute(
+            'ALTER TABLE deleted_items ADD COLUMN added_by_uid TEXT');
+      } catch (_) {}
     }
   }
 
@@ -228,10 +249,77 @@ class DatabaseHelper {
     return result.map((map) => InventoryItem.fromMap(map)).toList();
   }
 
+  // ✅ جديد: جيب القطع الخاصة بـ user معين في مخزن معين
+  Future<List<InventoryItem>> getItemsByUserAndWarehouse({
+    required String uid,
+    required String warehouseName,
+    String? date,
+  }) async {
+    final db = await database;
+    String where = 'added_by_uid = ? AND warehouse_name = ?';
+    List<dynamic> args = [uid, warehouseName];
+    if (date != null) {
+      where += ' AND inventory_date = ?';
+      args.add(date);
+    }
+    final result = await db.query(
+      'inventory',
+      where: where,
+      whereArgs: args,
+      orderBy: 'inventory_date DESC, id DESC',
+    );
+    return result.map((map) => InventoryItem.fromMap(map)).toList();
+  }
+
+  // ✅ جديد: إحصائيات مخصصة لـ user
+  Future<Map<String, int>> getStatsByUser({
+    required String uid,
+    required String warehouseName,
+    String? date,
+  }) async {
+    final db = await database;
+    String baseWhere = "added_by_uid='$uid' AND warehouse_name='$warehouseName'";
+    if (date != null) baseWhere += " AND inventory_date='$date'";
+
+    final total = Sqflite.firstIntValue(await db
+            .rawQuery('SELECT COUNT(*) FROM inventory WHERE $baseWhere')) ??
+        0;
+    final good = Sqflite.firstIntValue(await db.rawQuery(
+            "SELECT COUNT(*) FROM inventory WHERE $baseWhere AND condition='جديد'")) ??
+        0;
+    final used = Sqflite.firstIntValue(await db.rawQuery(
+            "SELECT COUNT(*) FROM inventory WHERE $baseWhere AND condition='مستخدم'")) ??
+        0;
+    final damaged = Sqflite.firstIntValue(await db.rawQuery(
+            "SELECT COUNT(*) FROM inventory WHERE $baseWhere AND condition='تالف'")) ??
+        0;
+    final deleted = Sqflite.firstIntValue(await db.rawQuery(
+            "SELECT COUNT(*) FROM deleted_items WHERE deleted_by_uid='$uid'")) ??
+        0;
+    return {
+      'total': total,
+      'good': good,
+      'used': used,
+      'damaged': damaged,
+      'deleted': deleted,
+    };
+  }
+
   Future<List<String>> getInventoryDates() async {
     final db = await database;
     final result = await db.rawQuery(
         'SELECT DISTINCT inventory_date FROM inventory ORDER BY inventory_date DESC');
+    return result.map((r) => r['inventory_date'] as String).toList();
+  }
+
+  // ✅ جديد: تواريخ الجرد الخاصة بـ user في مخزن معين
+  Future<List<String>> getInventoryDatesByUser({
+    required String uid,
+    required String warehouseName,
+  }) async {
+    final db = await database;
+    final result = await db.rawQuery(
+        "SELECT DISTINCT inventory_date FROM inventory WHERE added_by_uid='$uid' AND warehouse_name='$warehouseName' ORDER BY inventory_date DESC");
     return result.map((r) => r['inventory_date'] as String).toList();
   }
 
@@ -241,17 +329,28 @@ class DatabaseHelper {
         where: 'id = ?', whereArgs: [item.id]);
   }
 
-  /// حذف عادي بدون تسجيل - استخدم deleteWithReason بدله
+  // ✅ جديد: نقل قطعة من مخزن لمخزن (Admin فقط)
+  Future<void> moveItemToWarehouse(int itemId, String newWarehouse) async {
+    final db = await database;
+    await db.update(
+      'inventory',
+      {'warehouse_name': newWarehouse},
+      where: 'id = ?',
+      whereArgs: [itemId],
+    );
+    await addWarehouse(newWarehouse);
+  }
+
   Future<int> deleteItem(int id) async {
     final db = await database;
     return db.delete('inventory', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// حذف مع تسجيل السبب في deleted_items
   Future<bool> deleteWithReason(
     InventoryItem item, {
     required String reason,
     String? extraNotes,
+    String? deletedByUid,
   }) async {
     final db = await database;
     await db.insert('deleted_items', {
@@ -265,6 +364,8 @@ class DatabaseHelper {
       'delete_reason': reason,
       'delete_notes': extraNotes ?? '',
       'deleted_at': DateTime.now().toIso8601String(),
+      'deleted_by_uid': deletedByUid,
+      'added_by_uid': item.addedByUid,
     });
     if (item.id != null) {
       await db.delete('inventory',
@@ -282,6 +383,18 @@ class DatabaseHelper {
     return db.query('deleted_items', orderBy: 'deleted_at DESC');
   }
 
+  // ✅ جديد: سجل حذف الـ user بس (اللي هو حذفه)
+  Future<List<Map<String, dynamic>>> getDeletedItemsByUser(
+      String uid) async {
+    final db = await database;
+    return db.query(
+      'deleted_items',
+      where: 'deleted_by_uid = ?',
+      whereArgs: [uid],
+      orderBy: 'deleted_at DESC',
+    );
+  }
+
   Future<void> restoreItem(Map<String, dynamic> deletedItem) async {
     final db = await database;
     await db.insert('inventory', {
@@ -291,10 +404,20 @@ class DatabaseHelper {
       'condition': deletedItem['condition'],
       'expiry_date': deletedItem['expiry_date'],
       'notes': 'مستعاد - ${deletedItem['delete_reason'] ?? ''}',
-      'inventory_date': deletedItem['inventory_date'] ?? InventoryItem.today(),
+      'inventory_date':
+          deletedItem['inventory_date'] ?? InventoryItem.today(),
+      'added_by_uid': deletedItem['added_by_uid'],
     });
-    await db.delete('deleted_items',
-        where: 'id = ?', whereArgs: [deletedItem['id']]);
+    // يحدّث السجل بوقت الاستعادة بس مش بيحذفه
+    await db.update(
+      'deleted_items',
+      {
+        'delete_notes':
+            '${deletedItem['delete_notes'] ?? ''} | مستعاد: ${DateTime.now().toString().substring(0, 16)}'
+      },
+      where: 'id = ?',
+      whereArgs: [deletedItem['id']],
+    );
   }
 
   Future<void> permanentDeleteItem(int id) async {

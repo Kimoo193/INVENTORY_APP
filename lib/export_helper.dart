@@ -3,6 +3,7 @@ import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'database.dart';
+import 'auth_service.dart';
 
 class ExportHelper {
   static String _todayString() {
@@ -23,6 +24,11 @@ class ExportHelper {
   }
 
   static Future<void> exportToExcel(List<InventoryItem> items, String? date) async {
+    final currentUser = await AuthService.instance.getCurrentUser();
+    if (currentUser == null || !currentUser.canExport) {
+      throw Exception('ليس لديك صلاحية التصدير');
+    }
+    
     final excel = Excel.createExcel();
 
     final headerStyle = CellStyle(

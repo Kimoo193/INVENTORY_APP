@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "854488781428",
+    "project_id": "karamstock-1a3a5",
+    "storage_bucket": "karamstock-1a3a5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:854488781428:android:45ce27f6b9f3a4b55ef721",
+        "android_client_info": {
+          "package_name": "com.Kammr3.inventory_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCg92js1Kwg6V9eBg3GPB24cQAaIe-ydFo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

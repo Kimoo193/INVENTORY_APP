@@ -20,6 +20,12 @@ dependencies:
   path: ^1.9.0
   file_picker: ^8.1.2
   syncfusion_flutter_pdf: ^27.1.48
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_messaging: ^15.0.0
+  flutter_local_notifications: ^17.2.0
+
 
 dev_dependencies:
   flutter_test:

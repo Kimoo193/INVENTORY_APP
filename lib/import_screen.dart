@@ -4,6 +4,7 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'dart:io';
 import 'database.dart';
+import 'auth_service.dart';
 
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key});
@@ -29,6 +30,14 @@ class _ImportScreenState extends State<ImportScreen> {
   // استيراد Excel - يتعرف على 6 أشكال مختلفة
   // ============================================================
   Future<void> _importFromExcel() async {
+    final currentUser = await AuthService.instance.getCurrentUser();
+    if (currentUser == null || !currentUser.canImport) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ليس لديك صلاحية الاستيراد')),
+      );
+      return;
+    }
+    
     setState(() {
       _loading = true;
       _status = 'جاري اختيار الملف...';
@@ -293,6 +302,14 @@ class _ImportScreenState extends State<ImportScreen> {
   // استيراد PDF
   // ============================================================
   Future<void> _importFromPdf() async {
+    final currentUser = await AuthService.instance.getCurrentUser();
+    if (currentUser == null || !currentUser.canImport) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ليس لديك صلاحية الاستيراد')),
+      );
+      return;
+    }
+    
     setState(() {
       _loading = true;
       _status = 'جاري اختيار الملف...';

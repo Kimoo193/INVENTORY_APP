@@ -3,6 +3,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 import 'database.dart';
+import 'auth_service.dart';
+import 'notification_service.dart'; // ✅ إشعارات
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -567,6 +569,30 @@ class _AddItemScreenState extends State<AddItemScreen> {
   }
 
   Future<void> _save() async {
+    final currentUser = await AuthService.instance.getCurrentUser();
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يجب تسجيل الدخول أولاً')),
+      );
+      return;
+    }
+    
+    // لو تعديل (itemToEdit موجود) - يحتاج صلاحية تعديل
+    if (widget.itemToEdit != null && !currentUser.canEdit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ليس لديك صلاحية التعديل')),
+      );
+      return;
+    }
+    
+    // لو إضافة جديدة - يحتاج صلاحية إضافة
+    if (widget.itemToEdit == null && !currentUser.canAdd) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ليس لديك صلاحية الإضافة')),
+      );
+      return;
+    }
+    
     if (!_formKey.currentState!.validate()) return;
     if (_selectedWarehouse == null || _selectedProduct == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -590,11 +616,20 @@ class _AddItemScreenState extends State<AddItemScreen> {
           : _notesController.text.trim(),
       inventoryDate:
           widget.itemToEdit?.inventoryDate ?? widget.selectedDate,
+      addedByUid: currentUser.uid, // ✅ سجّل مين أضاف
     );
     if (widget.itemToEdit != null) {
       await DatabaseHelper.instance.updateItem(item);
     } else {
       await DatabaseHelper.instance.insertItem(item);
+      // ✅ إشعار للـ Admins عند إضافة قطعة جديدة (بس لو المستخدم مش Admin)
+      if (!currentUser.isAdmin) {
+        NotificationService.instance.notifyItemAdded(
+          productName: item.productName,
+          warehouseName: item.warehouseName,
+          addedByName: currentUser.name,
+        );
+      }
     }
     setState(() => _loading = false);
     if (mounted) Navigator.pop(context, true);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'database.dart';
+import 'auth_service.dart';
 
 class ManageScreen extends StatefulWidget {
   const ManageScreen({super.key});
@@ -29,6 +30,16 @@ class _ManageScreenState extends State<ManageScreen>
   }
 
   Future<void> _loadData() async {
+    final currentUser = await AuthService.instance.getCurrentUser();
+    if (currentUser == null || !currentUser.canManage) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ليس لديك صلاحية إدارة القوائم')),
+        );
+        Navigator.pop(context);
+      }
+      return;
+    }
     setState(() => _loading = true);
     final warehouses = await DatabaseHelper.instance.getWarehouses();
     final products = await DatabaseHelper.instance.getProducts();
