@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'auth_service.dart';
+import 'log_service.dart';
 
 // ============================================================
 // InventoryItem Model
@@ -102,11 +103,32 @@ class FirestoreService {
 
   final _db = FirebaseFirestore.instance;
 
+  // ✅ Cache للـ currentUser — بيتصفّى عند الحاجة
+  AppUser? _cachedUser;
+  DateTime? _cacheTime;
+
+  Future<AppUser?> _getCachedUser() async {
+    final now = DateTime.now();
+    if (_cachedUser != null &&
+        _cacheTime != null &&
+        now.difference(_cacheTime!).inSeconds < 30) {
+      return _cachedUser;
+    }
+    _cachedUser = await AuthService.instance.getCurrentUser();
+    _cacheTime = now;
+    return _cachedUser;
+  }
+
+  void clearCache() {
+    _cachedUser = null;
+    _cacheTime = null;
+  }
+
   // ✅ Helper: جيب adminUid الخاص بالـ user الحالي
   // لو Admin → uid بتاعه
   // لو User → adminUid المحفوظ في بياناته
   Future<String?> _getAdminUid() async {
-    final user = await AuthService.instance.getCurrentUser();
+    final user = await _getCachedUser();
     if (user == null) return null;
     if (user.isAdmin) return user.uid;
     return user.adminUid; // ✅ محفوظ في Firestore
@@ -143,6 +165,15 @@ class FirestoreService {
       await addWarehouse(item.warehouseName);
       await addProduct(item.productName);
 
+      // ✅ Log
+      LogService.instance.log(
+        type: LogType.itemAdded,
+        product: item.productName,
+        warehouse: item.warehouseName,
+        serial: item.serial,
+        adminUid: adminUid,
+      );
+
       return docRef.id;
     } catch (e) {
       return null;
@@ -154,7 +185,7 @@ class FirestoreService {
       final adminUid = await _getAdminUid();
       if (adminUid == null) return [];
 
-      final user = await AuthService.instance.getCurrentUser();
+      final user = await _getCachedUser();
       Query query = _itemsRef(adminUid).orderBy('inventoryDate', descending: true);
 
       // ✅ User بيشوف بس مخزنه
@@ -179,7 +210,7 @@ class FirestoreService {
       final adminUid = await _getAdminUid();
       if (adminUid == null) return [];
 
-      final user = await AuthService.instance.getCurrentUser();
+      final user = await _getCachedUser();
       Query query = _itemsRef(adminUid).where('inventoryDate', isEqualTo: date);
 
       // ✅ User بيشوف بس مخزنه
@@ -202,7 +233,7 @@ class FirestoreService {
       final adminUid = await _getAdminUid();
       if (adminUid == null) return [];
 
-      final user = await AuthService.instance.getCurrentUser();
+      final user = await _getCachedUser();
       Query query = _itemsRef(adminUid);
 
       // ✅ User بيشوف بس مخزنه
@@ -229,6 +260,14 @@ class FirestoreService {
     try {
       final adminUid = await _getAdminUid();
       if (adminUid == null || item.id == null) return;
+      // ✅ Log
+      LogService.instance.log(
+        type: LogType.itemEdited,
+        product: item.productName,
+        warehouse: item.warehouseName,
+        serial: item.serial,
+        adminUid: adminUid,
+      );
 
       await _itemsRef(adminUid).doc(item.id).update({
         'warehouseName': item.warehouseName,
@@ -250,11 +289,17 @@ class FirestoreService {
     String? deletedByUid,
   }) async {
     try {
-      final adminUid = await _getAdminUid();
+      String? adminUid = await _getAdminUid();
+      
+      // ✅ Fallback: لو adminUid null، جرب تجيبه من item.adminUid
+      if (adminUid == null && item.adminUid != null) {
+        adminUid = item.adminUid;
+      }
+      
       if (adminUid == null || item.id == null) return false;
 
       // ✅ نقل للمحذوفات
-      await _deletedRef(adminUid).add({
+      await _deletedRef(adminUid!).add({
         'warehouseName': item.warehouseName,
         'productName': item.productName,
         'serial': item.serial,
@@ -272,6 +317,18 @@ class FirestoreService {
 
       // ✅ حذف من الـ items
       await _itemsRef(adminUid).doc(item.id).delete();
+
+      // ✅ Log
+      LogService.instance.log(
+        type: LogType.itemDeleted,
+        product: item.productName,
+        warehouse: item.warehouseName,
+        serial: item.serial,
+        reason: reason,
+        details: (extraNotes != null && extraNotes.isNotEmpty) ? extraNotes : null,
+        adminUid: adminUid,
+      );
+
       return true;
     } catch (e) {
       return false;
@@ -287,7 +344,7 @@ class FirestoreService {
       final adminUid = await _getAdminUid();
       if (adminUid == null) return [];
 
-      final snapshot = await _deletedRef(adminUid)
+      final snapshot = await _deletedRef(adminUid!)
           .orderBy('deletedAt', descending: true)
           .get();
 
@@ -316,15 +373,28 @@ class FirestoreService {
 
   Future<List<Map<String, dynamic>>> getDeletedItemsByUser(String uid) async {
     try {
-      final adminUid = await _getAdminUid();
-      if (adminUid == null) return [];
+      // ✅ جيب الـ adminUid من user data مباشرة
+      final currentUser = await _getCachedUser();
+      
+      // ✅ حدد الـ adminUid: لو user → adminUid المحفوظ، لو admin → uid بتاعه
+      String? adminUid;
+      if (currentUser != null && currentUser.isAdmin) {
+        adminUid = currentUser.uid;
+      } else if (currentUser != null && currentUser.adminUid != null) {
+        adminUid = currentUser.adminUid;
+      } else {
+        // Fallback: دور في كل الـ admins عن القطع اللي حذفها هذا الـ user
+        return await _getDeletedItemsByUserFallback(uid);
+      }
 
-      final snapshot = await _deletedRef(adminUid)
+      // ✅ Query بدون orderBy — نتجنب مشكلة الـ Composite Index
+      if (adminUid == null) return await _getDeletedItemsByUserFallback(uid);
+      final String resolvedAdminUid = adminUid;
+      final snapshot = await _deletedRef(resolvedAdminUid)
           .where('deletedByUid', isEqualTo: uid)
-          .orderBy('deletedAt', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) {
+      final items = snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         return {
           'id': doc.id,
@@ -340,7 +410,70 @@ class FirestoreService {
           'inventory_date': data['inventoryDate'],
         };
       }).toList();
+
+      // ✅ رتّب في الـ Dart بدل Firestore (نتجنب الـ composite index)
+      items.sort((a, b) {
+        final aDate = a['deleted_at'] as String?;
+        final bDate = b['deleted_at'] as String?;
+        if (aDate == null || bDate == null) return 0;
+        return bDate.compareTo(aDate);
+      });
+
+      return items;
     } catch (e) {
+      // ✅ لو فيه أي error (حتى index error)، جرب الـ fallback
+      try {
+        return await _getDeletedItemsByUserFallback(uid);
+      } catch (_) {
+        return [];
+      }
+    }
+  }
+
+  // ✅ Fallback: دور في كل مخازن الـ admins عن قطع حذفها هذا الـ user
+  Future<List<Map<String, dynamic>>> _getDeletedItemsByUserFallback(String uid) async {
+    try {
+      final List<Map<String, dynamic>> allItems = [];
+      
+      // جيب كل الـ admins
+      final adminsSnap = await _db.collection('users')
+          .where('role', whereIn: ['admin', 'superadmin'])
+          .get();
+
+      for (final adminDoc in adminsSnap.docs) {
+        try {
+          final snapshot = await _deletedRef(adminDoc.id)
+              .where('deletedByUid', isEqualTo: uid)
+              .get();
+
+          for (final doc in snapshot.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            allItems.add({
+              'id': doc.id,
+              'warehouse_name': data['warehouseName'],
+              'product_name': data['productName'],
+              'serial': data['serial'],
+              'condition': data['condition'],
+              'delete_reason': data['deleteReason'],
+              'delete_notes': data['deleteNotes'],
+              'deleted_at': (data['deletedAt'] as Timestamp?)?.toDate().toIso8601String(),
+              'deleted_by_uid': data['deletedByUid'],
+              'expiry_date': data['expiryDate'],
+              'inventory_date': data['inventoryDate'],
+            });
+          }
+        } catch (_) {}
+      }
+
+      allItems.sort((a, b) {
+        final aDate = a['deleted_at'] as String?;
+        final bDate = b['deleted_at'] as String?;
+        if (aDate == null || bDate == null) return 0;
+        return bDate.compareTo(aDate);
+      });
+
+      return allItems;
+    } catch (_) {
       return [];
     }
   }
@@ -348,6 +481,13 @@ class FirestoreService {
   Future<void> restoreItem(Map<String, dynamic> deletedItem) async {
     try {
       final adminUid = await _getAdminUid();
+      // ✅ Log
+      LogService.instance.log(
+        type: LogType.itemRestored,
+        product: deletedItem['product_name']?.toString(),
+        warehouse: deletedItem['warehouse_name']?.toString(),
+        adminUid: adminUid,
+      );
       if (adminUid == null) return;
 
       // ✅ رجّع للـ items
@@ -367,7 +507,7 @@ class FirestoreService {
       // ✅ حدّث سجل الحذف — إضافة ملاحظة الاستعادة
       final now = DateTime.now().toString().substring(0, 16);
       final oldNotes = deletedItem['delete_notes'] ?? '';
-      await _deletedRef(adminUid).doc(deletedItem['id']).update({
+      await _deletedRef(adminUid!).doc(deletedItem['id']).update({
         'deleteNotes': oldNotes.isEmpty
             ? 'مستعاد: $now'
             : '$oldNotes | مستعاد: $now',
@@ -379,7 +519,7 @@ class FirestoreService {
     try {
       final adminUid = await _getAdminUid();
       if (adminUid == null) return;
-      await _deletedRef(adminUid).doc(docId).delete();
+      await _deletedRef(adminUid!).doc(docId).delete();
     } catch (_) {}
   }
 
@@ -487,7 +627,7 @@ class FirestoreService {
       final adminUid = await _getAdminUid();
       if (adminUid == null) return _emptyStats();
 
-      final user = await AuthService.instance.getCurrentUser();
+      final user = await _getCachedUser();
       Query query = _itemsRef(adminUid);
 
       if (date != null) {
@@ -510,7 +650,7 @@ class FirestoreService {
       final damaged = items.where((i) => i['condition'] == 'تالف').length;
 
       // ✅ عدد المحذوفات
-      Query deletedQuery = _deletedRef(adminUid);
+      Query deletedQuery = _deletedRef(adminUid!);
       if (user != null && !user.isAdmin) {
         deletedQuery = deletedQuery.where('deletedByUid', isEqualTo: user.uid);
       }
@@ -609,7 +749,7 @@ class FirestoreService {
       int deletedBatchCount = 0;
 
       for (final item in deletedItems) {
-        final docRef = _deletedRef(adminUid).doc();
+        final docRef = _deletedRef(adminUid!).doc();
         deletedBatch.set(docRef, {
           'warehouseName': item['warehouse_name'],
           'productName': item['product_name'],

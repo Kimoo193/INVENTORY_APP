@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'log_service.dart';
 
 const String kSuperAdminEmail = 'kareem@karamstock.com';
 const String kSuperAdminPassword = 'KaramStock@2025';
@@ -17,6 +18,7 @@ class AppUser {
   final bool canExport;
   final bool canImport;
   final bool canManage;
+  final bool canRestore;
   final bool isActive;
   final DateTime? createdAt;
   final String? assignedWarehouse;
@@ -34,6 +36,7 @@ class AppUser {
     this.canExport = false,
     this.canImport = false,
     this.canManage = false,
+    this.canRestore = false,
     this.isActive = true,
     this.createdAt,
     this.assignedWarehouse,
@@ -53,6 +56,7 @@ class AppUser {
       canExport: map['canExport'] ?? false,
       canImport: map['canImport'] ?? false,
       canManage: map['canManage'] ?? false,
+      canRestore: map['canRestore'] ?? false,
       isActive: map['isActive'] ?? true,
       createdAt: map['createdAt'] != null
           ? (map['createdAt'] as Timestamp).toDate()
@@ -74,6 +78,7 @@ class AppUser {
       'canExport': canExport,
       'canImport': canImport,
       'canManage': canManage,
+      'canRestore': canRestore,
       'isActive': isActive,
       'createdAt': createdAt != null
           ? Timestamp.fromDate(createdAt!)
@@ -111,6 +116,18 @@ class AuthService {
         await _db.collection('users').doc(cred.user!.uid).set(
           {'lastLogin': FieldValue.serverTimestamp()}, SetOptions(merge: true));
       } catch (_) {}
+
+      // ✅ Log login
+      if (user != null) {
+        LogService.instance.log(
+          type: LogType.userLogin,
+          actorUid: user.uid,
+          actorName: user.name,
+          actorRole: user.role,
+          adminUid: user.isAdmin ? user.uid : user.adminUid,
+        );
+      }
+
       return user;
     } on FirebaseAuthException catch (e) {
       throw Exception(_authError(e.code));
@@ -145,7 +162,7 @@ class AuthService {
         return AppUser(
           uid: authUser.uid, email: authUser.email!, name: 'Kareem Mohamed',
           role: 'superadmin', canAdd: true, canEdit: true, canDelete: true,
-          canExport: true, canImport: true, canManage: true, isActive: true,
+          canExport: true, canImport: true, canManage: true, canRestore: true, isActive: true,
         );
       }
       return null;
@@ -181,7 +198,7 @@ class AuthService {
     return await _createUserSafely(
       email: email, password: password, name: name, role: 'admin',
       permissions: {'canAdd':true,'canEdit':true,'canDelete':true,
-        'canExport':true,'canImport':true,'canManage':true},
+        'canExport':true,'canImport':true,'canManage':true,'canRestore':true},
       createdBy: createdBy,
     );
   }
@@ -223,12 +240,23 @@ class AuthService {
         canExport: permissions['canExport'] ?? false,
         canImport: permissions['canImport'] ?? false,
         canManage: permissions['canManage'] ?? false,
+        canRestore: permissions['canRestore'] ?? false,
         isActive: true, createdAt: DateTime.now(),
         assignedWarehouse: assignedWarehouse,
         adminUid: adminUid,
         createdBy: createdBy,
       );
       await _db.collection('users').doc(cred.user!.uid).set(newUser.toMap());
+
+      // ✅ Log
+      LogService.instance.log(
+        type: role == 'admin' ? LogType.adminCreated : LogType.userCreated,
+        targetUserName: name,
+        targetUserEmail: email.trim(),
+        actorUid: createdBy,
+        adminUid: adminUid ?? createdBy,
+      );
+
       return newUser;
     } on FirebaseAuthException catch (e) {
       throw Exception(_authError(e.code));
@@ -277,8 +305,14 @@ class AuthService {
     await _db.collection('users').doc(uid).update(data);
   }
 
-  Future<void> toggleUserActive(String uid, bool isActive) async {
+  Future<void> toggleUserActive(String uid, bool isActive, {String? byUid}) async {
     await _db.collection('users').doc(uid).update({'isActive': isActive});
+    // ✅ Log
+    LogService.instance.log(
+      type: isActive ? LogType.userActivated : LogType.userDeactivated,
+      targetUserName: uid,
+      actorUid: byUid,
+    );
   }
 
   Future<void> changePassword(String newPassword) async {
@@ -298,7 +332,7 @@ class AuthService {
         'role': isSuperAdmin ? 'superadmin' : 'user',
         'canAdd': true, 'canEdit': isSuperAdmin, 'canDelete': isSuperAdmin,
         'canExport': isSuperAdmin, 'canImport': isSuperAdmin,
-        'canManage': isSuperAdmin, 'isActive': true,
+        'canManage': isSuperAdmin, 'canRestore': isSuperAdmin, 'isActive': true,
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (_) {}
@@ -336,7 +370,7 @@ class AuthService {
               'email': kSuperAdminEmail, 'name': 'Kareem Mohamed',
               'role': 'superadmin', 'canAdd': true, 'canEdit': true,
               'canDelete': true, 'canExport': true, 'canImport': true,
-              'canManage': true, 'isActive': true,
+              'canManage': true, 'canRestore': true, 'isActive': true,
               'createdAt': FieldValue.serverTimestamp(),
             });
           }

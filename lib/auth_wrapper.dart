@@ -80,7 +80,8 @@ class AuthWrapper extends StatelessWidget {
   }
 }
 
-/// ✅ يعرض السبلاش كل مرة يدخل فيها المستخدم، ثم ينتقل للـ Home
+/// ✅ يعرض السبلاش ثم يعرض الـ Home في نفس المكان (بدون Navigator.pushReplacement)
+/// السبب: pushReplacement كانت بتشيل AuthWrapper من الـ Stack فـ logout مكانش بيشتغل
 class _SplashThenHome extends StatefulWidget {
   final Widget home;
   const _SplashThenHome({required this.home});
@@ -90,20 +91,20 @@ class _SplashThenHome extends StatefulWidget {
 }
 
 class _SplashThenHomeState extends State<_SplashThenHome> {
+  bool _showHome = false;
+
   @override
   void initState() {
     super.initState();
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => widget.home),
-        );
-      }
+      if (mounted) setState(() => _showHome = true);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    // لو خلص الـ splash، اعرض الـ Home مباشرة (AuthWrapper يفضل في الـ stack)
+    if (_showHome) return widget.home;
     return Scaffold(
       backgroundColor: const Color(0xFF1A237E),
       body: SafeArea(

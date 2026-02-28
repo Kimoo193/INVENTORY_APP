@@ -19,11 +19,17 @@ class _ImportScreenState extends State<ImportScreen> {
   List<Map<String, String>> _previewItems = [];
   bool _showPreview = false;
   String? _selectedDate;
+  AppUser? _currentUser; // ✅ لتتبع addedByUid عند الاستيراد
 
   @override
   void initState() {
     super.initState();
     _selectedDate = InventoryItem.today();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    _currentUser = await AuthService.instance.getCurrentUser();
   }
 
   // ============================================================
@@ -622,15 +628,14 @@ class _ImportScreenState extends State<ImportScreen> {
     for (final item in _previewItems) {
       try {
         await FirestoreService.instance.insertItem(InventoryItem(
-          warehouseName:
-              item['warehouse'] ?? 'Stock 1',
+          warehouseName: item['warehouse'] ?? 'Stock 1',
           productName: item['product'] ?? 'غير محدد',
           serial: item['serial']?.isEmpty == true ? null : item['serial'],
           condition: item['condition'] ?? 'جديد',
-          expiryDate:
-              item['expiry']?.isEmpty == true ? null : item['expiry'],
+          expiryDate: item['expiry']?.isEmpty == true ? null : item['expiry'],
           notes: item['notes']?.isEmpty == true ? null : item['notes'],
           inventoryDate: _selectedDate,
+          addedByUid: _currentUser?.uid, // ✅ مين عمل الاستيراد
         ));
         saved++;
       } catch (_) {}

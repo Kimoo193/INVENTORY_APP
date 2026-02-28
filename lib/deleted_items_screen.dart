@@ -33,13 +33,15 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
     setState(() => _loading = true);
     List<Map<String, dynamic>> results;
 
-    if (_currentUser != null && !_currentUser!.isAdmin) {
-      // ✅ User: يشوف بس اللي هو حذفه
+    if (_currentUser != null && _currentUser!.isAdmin) {
+      // Admin: يشوف كل السجل
+      results = await FirestoreService.instance.getDeletedItems();
+    } else if (_currentUser != null) {
+      // ✅ User: يشوف اللي حذفه هو
       results = await FirestoreService.instance
           .getDeletedItemsByUser(_currentUser!.uid);
     } else {
-      // Admin: يشوف كل السجل
-      results = await FirestoreService.instance.getDeletedItems();
+      results = [];
     }
 
     setState(() {
@@ -296,8 +298,8 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
-                                  // ✅ استعادة: للجميع (user + admin)
-                                  if (!isRestored)
+                                  // ✅ استعادة: Admin دايماً، User لو عنده canRestore
+                                  if (!isRestored && (isAdmin || (_currentUser?.canRestore == true)))
                                     TextButton.icon(
                                       onPressed: () => _restoreItem(item),
                                       icon: const Icon(Icons.restore, size: 18, color: Color(0xFF1A237E)),
