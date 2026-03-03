@@ -8,13 +8,14 @@ import 'export_helper.dart';
 import 'manage_screen.dart';
 import 'import_screen.dart';
 import 'deleted_items_screen.dart';
-import 'users_screen.dart' hide FirestoreService, InventoryItem;
+import 'users_screen.dart';
+import 'super_admin_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'auth_wrapper.dart';
 import 'auth_service.dart';
+import 'log_service.dart';
 import 'notification_service.dart';
-import 'super_admin_screen.dart';
 import 'app_localizations.dart';
 
 void main() async {
@@ -156,7 +157,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-    if (confirm == true) await AuthService.instance.logout();
+    if (confirm == true) {
+      // ✅ Log logout قبل الخروج
+      if (_currentUser != null) {
+        try {
+          await LogService.instance.logLogout(_currentUser!);
+        } catch (_) {}
+      }
+      // ✅ logout — AuthWrapper هيسمع authStateChanges تلقائياً ويعمل redirect
+      await AuthService.instance.logout();
+    }
   }
 
   void _toggleLanguage() {
@@ -198,7 +208,11 @@ class _HomeScreenState extends State<HomeScreen> {
           if (items.isEmpty) { _showSnack(AppLocalizations.noData, Colors.orange); return; }
           ExportHelper.exportToExcel(items, null);
         },
-        onLogout: () { Navigator.pop(bsCtx); _confirmLogout(); },
+        onLogout: () async {
+          Navigator.pop(bsCtx); // ✅ أغلق الـ sheet أولاً
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (mounted) _confirmLogout();
+        },
       ),
     );
   }
@@ -579,18 +593,23 @@ class _MenuSheet extends StatelessWidget {
             const Divider(height: 1),
 
             // Menu Items
-            // ✅ Super Admin Dashboard — للـ Super Admin فقط
+
+            // ✅ Super Admin Panel
             if (currentUser?.isSuperAdmin == true)
-              _item(context, Icons.admin_panel_settings_rounded,
-                  'لوحة Super Admin', const Color(0xFF1A237E),
-                  () => onNavigate(const SuperAdminScreen())),
+              _item(
+                context,
+                Icons.admin_panel_settings_rounded,
+                AppLocalizations.isArabic ? 'لوحة Super Admin' : 'Super Admin Panel',
+                const Color(0xFF1A237E),
+                () => onNavigate(const SuperAdminScreen()),
+              ),
 
             _item(context, Icons.delete_sweep_rounded, AppLocalizations.deleteLog,
                 Colors.orange, () => onNavigate(const DeletedItemsScreen())),
 
             if (isAdmin)
               _item(context, Icons.people_alt_rounded, AppLocalizations.manageUsers,
-                  Colors.blue, () => onNavigate(UsersScreen())),
+                  Colors.blue, () => onNavigate(const UsersScreen())),
 
             _item(context, Icons.upload_file_rounded, AppLocalizations.importData,
                 Colors.purple, () => onNavigate(const ImportScreen())),

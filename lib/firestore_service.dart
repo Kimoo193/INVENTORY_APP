@@ -165,9 +165,13 @@ class FirestoreService {
       await addWarehouse(item.warehouseName);
       await addProduct(item.productName);
 
-      // ✅ Log
+      // ✅ Log — بيسجل مين أضاف بالظبط
+      final actor = await _getCachedUser();
       LogService.instance.log(
         type: LogType.itemAdded,
+        actorUid: actor?.uid,
+        actorName: actor?.name,
+        actorRole: actor?.role,
         product: item.productName,
         warehouse: item.warehouseName,
         serial: item.serial,
@@ -260,9 +264,13 @@ class FirestoreService {
     try {
       final adminUid = await _getAdminUid();
       if (adminUid == null || item.id == null) return;
-      // ✅ Log
+      // ✅ Log — بيسجل مين عدّل
+      final actor = await _getCachedUser();
       LogService.instance.log(
         type: LogType.itemEdited,
+        actorUid: actor?.uid,
+        actorName: actor?.name,
+        actorRole: actor?.role,
         product: item.productName,
         warehouse: item.warehouseName,
         serial: item.serial,
@@ -318,9 +326,21 @@ class FirestoreService {
       // ✅ حذف من الـ items
       await _itemsRef(adminUid).doc(item.id).delete();
 
-      // ✅ Log
+      // ✅ Log — بيسجل مين حذف + السبب
+      String? actorName;
+      String? actorRole;
+      if (deletedByUid != null) {
+        try {
+          final actorDoc = await _db.collection('users').doc(deletedByUid).get();
+          actorName = actorDoc.data()?['name'] as String?;
+          actorRole = actorDoc.data()?['role'] as String?;
+        } catch (_) {}
+      }
       LogService.instance.log(
         type: LogType.itemDeleted,
+        actorUid: deletedByUid,
+        actorName: actorName,
+        actorRole: actorRole,
         product: item.productName,
         warehouse: item.warehouseName,
         serial: item.serial,
@@ -481,9 +501,13 @@ class FirestoreService {
   Future<void> restoreItem(Map<String, dynamic> deletedItem) async {
     try {
       final adminUid = await _getAdminUid();
-      // ✅ Log
+      // ✅ Log — بيسجل مين استعاد
+      final actor = await _getCachedUser();
       LogService.instance.log(
         type: LogType.itemRestored,
+        actorUid: actor?.uid,
+        actorName: actor?.name,
+        actorRole: actor?.role,
         product: deletedItem['product_name']?.toString(),
         warehouse: deletedItem['warehouse_name']?.toString(),
         adminUid: adminUid,
@@ -519,7 +543,30 @@ class FirestoreService {
     try {
       final adminUid = await _getAdminUid();
       if (adminUid == null) return;
+
+      // ✅ اقرأ البيانات قبل الحذف عشان تسجلها في الـ log
+      Map<String, dynamic>? itemData;
+      try {
+        final doc = await _deletedRef(adminUid!).doc(docId).get();
+        itemData = doc.data() as Map<String, dynamic>?;
+      } catch (_) {}
+
       await _deletedRef(adminUid!).doc(docId).delete();
+
+      // ✅ Log للحذف النهائي
+      final actor = await _getCachedUser();
+      LogService.instance.log(
+        type: LogType.itemPermanentDeleted,
+        actorUid: actor?.uid,
+        actorName: actor?.name,
+        actorRole: actor?.role,
+        product: itemData?['productName'] as String?,
+        warehouse: itemData?['warehouseName'] as String?,
+        serial: itemData?['serial'] as String?,
+        reason: itemData?['deleteReason'] as String?,
+        details: 'حذف نهائي — لن يمكن استعادته',
+        adminUid: adminUid,
+      );
     } catch (_) {}
   }
 

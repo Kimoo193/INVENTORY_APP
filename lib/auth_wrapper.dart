@@ -3,48 +3,65 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'login_screen.dart';
 import 'auth_service.dart';
 import 'notification_service.dart';
+import 'log_service.dart';
 
-class AuthWrapper extends StatelessWidget {
-  const AuthWrapper({
-    super.key,
-    required this.authenticatedHome,
-  });
-
+// ============================================================
+// AuthWrapper — يتحكم في توجيه المستخدم بناءً على حالة الـ Auth
+// ✅ StatefulWidget عشان نقدر نتعامل مع الـ logout صح
+// ============================================================
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key, required this.authenticatedHome});
   final Widget authenticatedHome;
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  // ✅ نتذكر آخر حالة للـ user — لو كان logged in وبقى logged out نعمل redirect
+  bool _wasLoggedIn = false;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
+
         // جاري التحميل
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            backgroundColor: Color(0xFF1A237E),
-            body: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          );
+          return const _LoadingScreen();
         }
 
-        // مش مسجل دخول
-        if (!snapshot.hasData || snapshot.data == null) {
-          // ✅ وقّف الـ listener عند الخروج
+        final firebaseUser = snapshot.data;
+
+        // ✅ مش مسجل دخول
+        if (firebaseUser == null) {
           NotificationService.instance.stopListening();
+
+          // ✅ لو كان logged in قبل (logout حصل) — امسح كل الـ stack
+          if (_wasLoggedIn) {
+            _wasLoggedIn = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                // امسح كل الـ routes وارجع للـ root (اللي هو AuthWrapper نفسه)
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              }
+            });
+          }
+
           return const LoginScreen();
         }
 
-        // مسجل دخول — تحقق من بياناته في Firestore
+        // ✅ مسجل دخول
         return FutureBuilder<AppUser?>(
           future: AuthService.instance.getCurrentUser(),
           builder: (context, userSnapshot) {
+
             if (userSnapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                backgroundColor: Color(0xFF1A237E),
-                body: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-              );
+              return const _LoadingScreen();
             }
 
             final appUser = userSnapshot.data;
@@ -55,22 +72,37 @@ class AuthWrapper extends StatelessWidget {
               return const LoginScreen();
             }
 
-            // ✅ ابدأ الـ Notification Listener للـ Admins فقط
+            // ✅ سجّل إن المستخدم مسجل دخول دلوقتي
+            _wasLoggedIn = true;
+
+            // ✅ ابدأ الـ Notifications للـ Admins
             if (appUser != null && appUser.isAdmin) {
-              NotificationService.instance
-                  .startListening(snapshot.data!.uid);
+              NotificationService.instance.startListening(firebaseUser.uid);
             }
 
-            // لو مش موجود في Firestore — اعمل document في الخلفية
+            // ✅ Log Login — بس مرة واحدة (مش كل rebuild)
+            if (appUser != null) {
+              _logLoginOnce(appUser);
+            }
+
+            // لو مش موجود في Firestore
             if (appUser == null) {
-              _ensureUserDocument(snapshot.data!);
+              _ensureUserDocument(firebaseUser);
             }
 
-            return _SplashThenHome(home: authenticatedHome);
+            return _SplashThenHome(home: widget.authenticatedHome);
           },
         );
       },
     );
+  }
+
+  // ✅ Log login مرة واحدة بس — نستخدم flag
+  String? _lastLoggedUid;
+  void _logLoginOnce(AppUser user) {
+    if (_lastLoggedUid == user.uid) return;
+    _lastLoggedUid = user.uid;
+    LogService.instance.logLogin(user);
   }
 
   void _ensureUserDocument(User firebaseUser) async {
@@ -80,8 +112,23 @@ class AuthWrapper extends StatelessWidget {
   }
 }
 
-/// ✅ يعرض السبلاش ثم يعرض الـ Home في نفس المكان (بدون Navigator.pushReplacement)
-/// السبب: pushReplacement كانت بتشيل AuthWrapper من الـ Stack فـ logout مكانش بيشتغل
+// ============================================================
+// Loading Screen
+// ============================================================
+class _LoadingScreen extends StatelessWidget {
+  const _LoadingScreen();
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Color(0xFF1A237E),
+      body: Center(child: CircularProgressIndicator(color: Colors.white)),
+    );
+  }
+}
+
+// ============================================================
+// Splash Screen ثم Home
+// ============================================================
 class _SplashThenHome extends StatefulWidget {
   final Widget home;
   const _SplashThenHome({required this.home});
@@ -91,20 +138,20 @@ class _SplashThenHome extends StatefulWidget {
 }
 
 class _SplashThenHomeState extends State<_SplashThenHome> {
-  bool _showHome = false;
-
   @override
   void initState() {
     super.initState();
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _showHome = true);
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => widget.home),
+        );
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // لو خلص الـ splash، اعرض الـ Home مباشرة (AuthWrapper يفضل في الـ stack)
-    if (_showHome) return widget.home;
     return Scaffold(
       backgroundColor: const Color(0xFF1A237E),
       body: SafeArea(
@@ -113,31 +160,26 @@ class _SplashThenHomeState extends State<_SplashThenHome> {
             const Spacer(),
             Center(
               child: Container(
-                width: 120,
-                height: 120,
+                width: 120, height: 120,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
+                      blurRadius: 20, offset: const Offset(0, 8),
                     ),
                   ],
                 ),
-                child: const Icon(Icons.inventory_2,
-                    size: 70, color: Color(0xFF1A237E)),
+                child: const Icon(Icons.inventory_2, size: 70, color: Color(0xFF1A237E)),
               ),
             ),
             const SizedBox(height: 24),
             const Text(
               'Karam Stock',
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
+                color: Colors.white, fontSize: 32,
+                fontWeight: FontWeight.bold, letterSpacing: 1,
               ),
             ),
             const SizedBox(height: 32),
@@ -151,10 +193,8 @@ class _SplashThenHomeState extends State<_SplashThenHome> {
               child: const Text(
                 '🤍  اللهم صلِّ وسلم على نبينا محمد  🤍',
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  height: 1.6,
+                  color: Colors.white, fontSize: 16,
+                  fontWeight: FontWeight.w500, height: 1.6,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -165,9 +205,7 @@ class _SplashThenHomeState extends State<_SplashThenHome> {
               child: Text(
                 'BY : Kareem Mohamed',
                 style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                  letterSpacing: 1.5,
+                  color: Colors.white70, fontSize: 16, letterSpacing: 1.5,
                 ),
               ),
             ),

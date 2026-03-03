@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
+import 'log_service.dart';
 
 class ManageScreen extends StatefulWidget {
   const ManageScreen({super.key});
@@ -71,6 +72,11 @@ class _ManageScreenState extends State<ManageScreen>
     );
     if (confirm == true) {
       await FirestoreService.instance.deleteWarehouse(name);
+      LogService.instance.log(
+        type: LogType.itemDeleted,
+        warehouse: name,
+        details: 'حذف مخزن: $name',
+      );
       await _loadData();
     }
   }
@@ -96,6 +102,11 @@ class _ManageScreenState extends State<ManageScreen>
     );
     if (confirm == true) {
       await FirestoreService.instance.deleteProduct(name);
+      LogService.instance.log(
+        type: LogType.itemDeleted,
+        product: name,
+        details: 'حذف منتج: $name',
+      );
       await _loadData();
     }
   }

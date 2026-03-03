@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'auth_service.dart';
 import 'log_service.dart';
+import 'firestore_service.dart' show InventoryItem;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -1275,6 +1276,64 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
     setState(() { _logs = logs; _loadingLogs = false; });
   }
 
+  // ✅ استرجاع قطعة محذوفة نهائياً من الـ Log
+  Future<void> _recoverItem(Map<String, dynamic> log) async {
+    final productName = log['product'] as String? ?? 'غير معروف';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.restore_from_trash, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('استرجاع القطعة'),
+          ]),
+          content: Text('هتسترجع "$productName" وتضيفها للمخزن؟'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+              child: const Text('استرجاع'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirm != true) return;
+    
+    // ✅ أضف القطعة للمخزن مرة تانية
+    final db = FirebaseFirestore.instance;
+    final adminUid = log['adminUid'] as String?;
+    if (adminUid == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذّر الاسترجاع — بيانات ناقصة')));
+      return;
+    }
+    try {
+      await db.collection('inventory').doc(adminUid).collection('items').add({
+        'productName': log['product'],
+        'warehouseName': log['warehouse'] ?? 'غير محدد',
+        'serial': log['serial'],
+        'condition': 'غير محدد',
+        'notes': 'مستعاد من سجل الحذف النهائي — ${DateTime.now().toString().substring(0,16)}',
+        'inventoryDate': InventoryItem.today(),
+        'adminUid': adminUid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('تم استرجاع "$productName" ✅'),
+                backgroundColor: Colors.green));
+        _loadLogs(_selectedDate!);
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red));
+    }
+  }
+
   List<Map<String, dynamic>> get _filtered {
     var r = _logs;
     if (_typeFilter != 'all') {
@@ -1420,6 +1479,9 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
                                   itemBuilder: (_, i) => _LogCard(
                                     log: _filtered[i],
                                     timeStr: _timeStr(_filtered[i]),
+                                    onRecover: _filtered[i]['type'] == LogType.itemPermanentDeleted
+                                        ? () => _recoverItem(_filtered[i])
+                                        : null,
                                   ),
                                 ),
                     ),
@@ -1500,13 +1562,15 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
 
   Widget _buildTypeFilter() {
     final filters = [
-      ('الكل',       'all',                Colors.grey.shade600),
-      ('➕ إضافة',   LogType.itemAdded,    Colors.green),
-      ('🗑️ حذف',    LogType.itemDeleted,  Colors.red),
-      ('↩️ استعادة', LogType.itemRestored, Colors.blue),
-      ('✏️ تعديل',  LogType.itemEdited,   Colors.orange),
-      ('👤 مستخدم', LogType.userCreated,  Colors.purple),
-      ('🔑 دخول',   LogType.userLogin,    Colors.teal),
+      ('الكل',          'all',                         Colors.grey.shade600),
+      ('➕ إضافة',      LogType.itemAdded,              Colors.green),
+      ('🗑️ حذف',       LogType.itemDeleted,            Colors.red),
+      ('❌ حذف نهائي',  LogType.itemPermanentDeleted,   Colors.red.shade900),
+      ('↩️ استعادة',    LogType.itemRestored,           Colors.blue),
+      ('✏️ تعديل',     LogType.itemEdited,             Colors.orange),
+      ('👤 مستخدم',    LogType.userCreated,            Colors.purple),
+      ('🔑 دخول',      LogType.userLogin,              Colors.teal),
+      ('🚪 خروج',      LogType.userLogout,             Colors.grey),
     ];
 
     return Container(
@@ -1564,7 +1628,8 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
 class _LogCard extends StatelessWidget {
   final Map<String, dynamic> log;
   final String timeStr;
-  const _LogCard({required this.log, this.timeStr = ''});
+  final VoidCallback? onRecover; // ✅ استرجاع محذوف نهائياً
+  const _LogCard({required this.log, this.timeStr = '', this.onRecover});
 
   @override
   Widget build(BuildContext context) {
@@ -1623,10 +1688,17 @@ class _LogCard extends StatelessWidget {
       lines.add('Admin: $adminName');
     }
 
+    final isPermanentDeleted = type == LogType.itemPermanentDeleted;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: isPermanentDeleted ? 2 : 1.5,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isPermanentDeleted
+            ? BorderSide(color: Colors.red.shade200, width: 1)
+            : BorderSide.none,
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1663,6 +1735,24 @@ class _LogCard extends StatelessWidget {
                 child: Text(l,
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
               )),
+              // ✅ زر استرجاع للمحذوف نهائياً — Super Admin بس
+              if (isPermanentDeleted && onRecover != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 30,
+                  child: OutlinedButton.icon(
+                    onPressed: onRecover,
+                    icon: const Icon(Icons.restore_from_trash, size: 14),
+                    label: const Text('استرجاع', style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blue,
+                      side: const BorderSide(color: Colors.blue),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+              ],
             ]),
           ),
         ]),
