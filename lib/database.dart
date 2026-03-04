@@ -155,7 +155,7 @@ class DatabaseHelper {
           deleted_at TEXT
         )
       ''');
-      await db.insert('warehouses', {'name': 'WH32/Stock 1'},
+      await db.insert('warehouses', {'name': 'Stock 1'},
           conflictAlgorithm: ConflictAlgorithm.ignore);
     }
     if (oldVersion < 4) {
@@ -176,44 +176,8 @@ class DatabaseHelper {
   }
 
   Future _insertDefaultData(Database db) async {
-    await db.insert('warehouses', {'name': 'WH32/Stock 1'});
+    await db.insert('warehouses', {'name': 'Stock 1'});
     final products = [
-      'Mismon/جهاز مس مون',
-      'جهاز مليسة الإصدار الخامس',
-      'جهاز مليسة الإصدار السادس',
-      'WETRACK 2/جهاز تتبع صينى',
-      'SMART CARD',
-      'SIM CARD',
-      'بيردي دي في ار / Birdie DVR - 3 CAM',
-      'بيردي دي في ار / Birdie DVR - 2 CAM',
-      '(GIFT - BOX)/صندوق الهدايا',
-      'AC - M4/عدسة حب الشباب الاصدار الرابع',
-      'AC - M5/عدسة حب الشباب الاصدار الخامس',
-      'AC - M6/عدسة حب الشباب الاصدار السادس',
-      'Alfacort / Betaderm',
-      'BIKINI - HR-M6/عدسة المناطق الحساسة الاصدار السادس',
-      'BIKINI - HR/عدسة المناطق الحساسة',
-      'BURNS CREAM',
-      'FACE - HR-M6/عدسة الوجه الإصدار السادس',
-      'HR - M4/عدسة الجسم الإصدار الرابع',
-      'HR - M5/عدسة الجسم الإصدار الخامس',
-      'HR - M5_2/عدسة الجسم الإصدار الخامس -٢',
-      'HR - M6/عدسة الجسم الإصدار السادس',
-      'HR - TEST/عدسة الجسم-اختبار',
-      'man lamp/عدسة الرجال',
-      'Mis ac/عدسة مس مون لحب الشباب',
-      'Mis -Bhr/عدسة مس مون للمناطق الحساسة',
-      'Mis -FHR/عدسة مس مون للوجه',
-      'Mis hr/عدسة مس مون للجسم',
-      'Mis sr/عدسة مس مون للنضارة',
-      'mis-hr test/عدسة مس مون للجسم -اختبار',
-      'SR - M4/عدسة نضارة الاصدار الرابع',
-      'SR - M5/عدسة نضارة الإصدار الخامس',
-      'SR - M6/عدسة نضارة الإصدار السادس',
-      'Charger',
-      'سجادة صلاة',
-      'كريم مرطب افالون',
-      'GPS TRACKING - جهاز تتبع',
     ];
     for (final p in products) {
       await db.insert('products', {'name': p},
