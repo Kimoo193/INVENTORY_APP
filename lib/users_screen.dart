@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'auth_service.dart';
 import 'log_service.dart';
-import 'firestore_service.dart';
-import 'notification_service.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -51,6 +49,70 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   // ============================================================
+  // ✅ Dialog شرح قواعد كلمة السر
+  // ============================================================
+  void _showPasswordRulesDialog(String specificError) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(children: [
+            Icon(Icons.lock_outline, color: Colors.red.shade400),
+            const SizedBox(width: 8),
+            const Text('كلمة السر غير صحيحة'),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Text(specificError,
+                    style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(height: 14),
+              const Text('متطلبات كلمة السر:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ...[
+                '8 أحرف على الأقل',
+                'حرف كبير (A-Z)',
+                'حرف صغير (a-z)',
+                'رقم (0-9)',
+                'علامة مميزة مثل: ! @ # \$ %',
+              ].map((rule) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(children: [
+                  Icon(Icons.check_circle_outline, size: 16, color: Colors.grey.shade500),
+                  const SizedBox(width: 6),
+                  Text(rule, style: const TextStyle(fontSize: 13)),
+                ]),
+              )),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A237E),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('حسناً، سأعدلها'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
   // ✅ Dialog إضافة مستخدم جديد
   // ============================================================
   Future<void> _showAddUserDialog() async {
@@ -89,6 +151,7 @@ class _UsersScreenState extends State<UsersScreen> {
       'canManage': 'إدارة القوائم',
     };
 
+    if (!mounted) return;
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -109,7 +172,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A237E).withOpacity(0.1),
+                          color: const Color(0xFF1A237E).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(Icons.person_add, color: Color(0xFF1A237E)),
@@ -171,14 +234,14 @@ class _UsersScreenState extends State<UsersScreen> {
                           label: const Text('🔑 مدير'),
                           selected: isAdmin,
                           onSelected: (v) => setS(() => isAdmin = v),
-                          selectedColor: const Color(0xFF1A237E).withOpacity(0.15),
+                          selectedColor: const Color(0xFF1A237E).withValues(alpha: 0.15),
                         ),
                         const SizedBox(width: 8),
                         ChoiceChip(
                           label: const Text('👤 مستخدم'),
                           selected: !isAdmin,
                           onSelected: (v) => setS(() => isAdmin = !v),
-                          selectedColor: const Color(0xFF1A237E).withOpacity(0.15),
+                          selectedColor: const Color(0xFF1A237E).withValues(alpha: 0.15),
                         ),
                       ]),
                       const SizedBox(height: 12),
@@ -189,7 +252,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       const Text('المخزن المخصص:', style: TextStyle(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: selectedWarehouse,
+                        initialValue: selectedWarehouse,
                         decoration: InputDecoration(
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -211,7 +274,7 @@ class _UsersScreenState extends State<UsersScreen> {
                         contentPadding: EdgeInsets.zero,
                         title: Text(e.value, style: const TextStyle(fontSize: 14)),
                         value: permissions[e.key] ?? false,
-                        activeColor: const Color(0xFF1A237E),
+                        activeThumbColor: const Color(0xFF1A237E),
                         onChanged: (v) => setS(() => permissions[e.key] = v),
                       )),
                     ],
@@ -255,10 +318,41 @@ class _UsersScreenState extends State<UsersScreen> {
 
     if (result != true) return;
 
-    // Validate
-    if (nameCtrl.text.trim().isEmpty || emailCtrl.text.trim().isEmpty || passCtrl.text.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ارجاء ملء كل الحقول المطلوبة')));
+    // ✅ Validate جميع الحقول مع القواعد
+    final nameVal  = nameCtrl.text.trim();
+    final emailVal = emailCtrl.text.trim();
+    final passVal  = passCtrl.text;
+
+    if (nameVal.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الاسم مطلوب'), backgroundColor: Colors.red));
+      }
+      return;
+    }
+
+    final emailError = AppValidators.validateEmail(emailVal);
+    if (emailError != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(emailError), backgroundColor: Colors.red));
+      }
+      return;
+    }
+
+    // ✅ تحقق إن البريد مش مستخدم من قبل
+    final emailUsedError = await AppValidators.checkEmailNotUsed(emailVal);
+    if (emailUsedError != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(emailUsedError), backgroundColor: Colors.orange));
+      }
+      return;
+    }
+
+    final passError = AppValidators.validatePassword(passVal);
+    if (passError != null) {
+      if (mounted) _showPasswordRulesDialog(passError);
       return;
     }
 
@@ -272,10 +366,6 @@ class _UsersScreenState extends State<UsersScreen> {
     }
 
     try {
-      final adminUid = _currentUser!.isSuperAdmin
-          ? (_currentUser!.uid) // لو super admin بيضيف admin
-          : _currentUser!.uid;
-
       if (isAdmin && _currentUser?.isSuperAdmin == true) {
         // ✅ إنشاء Admin
         await AuthService.instance.createAdmin(
@@ -288,7 +378,7 @@ class _UsersScreenState extends State<UsersScreen> {
         LogService.instance.logUserCreated(
           createdByUid:   _currentUser!.uid,
           createdByName:  _currentUser!.name,
-          createdByRole:  _currentUser!.role ?? 'superadmin',
+          createdByRole:  _currentUser!.role,
           newUserName:    nameCtrl.text.trim(),
           newUserEmail:   emailCtrl.text.trim(),
           newUserRole:    'admin',
@@ -309,7 +399,7 @@ class _UsersScreenState extends State<UsersScreen> {
         LogService.instance.logUserCreated(
           createdByUid:   _currentUser!.uid,
           createdByName:  _currentUser!.name,
-          createdByRole:  _currentUser!.role ?? 'admin',
+          createdByRole:  _currentUser!.role,
           newUserName:    nameCtrl.text.trim(),
           newUserEmail:   emailCtrl.text.trim(),
           newUserRole:    'user',
@@ -432,7 +522,7 @@ class _UsersScreenState extends State<UsersScreen> {
                             child: ExpansionTile(
                               leading: CircleAvatar(
                                 backgroundColor: user.isActive
-                                    ? const Color(0xFF1A237E).withOpacity(0.1)
+                                    ? const Color(0xFF1A237E).withValues(alpha: 0.1)
                                     : Colors.grey.shade200,
                                 child: Text(roleIcon,
                                     style: const TextStyle(fontSize: 18)),
@@ -453,8 +543,8 @@ class _UsersScreenState extends State<UsersScreen> {
                                           horizontal: 7, vertical: 2),
                                       decoration: BoxDecoration(
                                         color: user.isAdmin
-                                            ? Colors.blue.withOpacity(0.1)
-                                            : Colors.green.withOpacity(0.1),
+                                            ? Colors.blue.withValues(alpha: 0.1)
+                                            : Colors.green.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(roleLabel,
@@ -472,7 +562,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 7, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.orange.withOpacity(0.1),
+                                          color: Colors.orange.withValues(alpha: 0.1),
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: Text('📦 ${user.assignedWarehouse}',
@@ -487,7 +577,7 @@ class _UsersScreenState extends State<UsersScreen> {
                               trailing: canManage
                                   ? Switch(
                                       value: user.isActive,
-                                      activeColor: const Color(0xFF1A237E),
+                                      activeThumbColor: const Color(0xFF1A237E),
                                       onChanged: (v) => _toggleActive(user, v),
                                     )
                                   : null,
@@ -543,7 +633,7 @@ class _UsersScreenState extends State<UsersScreen> {
       AppUser user, String key, String label, bool value, bool canManage) {
     return FilterChip(
       selected: value,
-      selectedColor: const Color(0xFF1A237E).withOpacity(0.15),
+      selectedColor: const Color(0xFF1A237E).withValues(alpha: 0.15),
       checkmarkColor: const Color(0xFF1A237E),
       onSelected: canManage ? (v) => _togglePermission(user, key, v) : null,
       label: Text(label, style: const TextStyle(fontSize: 13)),

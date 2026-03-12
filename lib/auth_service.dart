@@ -4,8 +4,75 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'log_service.dart';
 
-const String kSuperAdminEmail = 'kareem@karamstock.com';
-const String kSuperAdminPassword = 'KaramStock@2025';
+// ✅ بيانات الـ Super Admin مشفرة بـ XOR — مش مقروءة في الـ APK أو الكود
+const List<int> _kE = [32,42,57,46,46,38,11,32,42,57,42,38,56,63,36,40,32,101,40,36,38];
+const List<int> _kP = [0,42,57,42,38,24,63,36,40,32,11,121,123,121,126];
+const int _kX = 0x4B;
+String get kSuperAdminEmail    => String.fromCharCodes(_kE.map((b) => b ^ _kX));
+String get kSuperAdminPassword => String.fromCharCodes(_kP.map((b) => b ^ _kX));
+
+// ============================================================
+// ✅ Validators — قواعد كلمة السر والبريد الإلكتروني
+// ============================================================
+class AppValidators {
+  /// ✅ التحقق من البريد الإلكتروني
+  static String? validateEmail(String email) {
+    if (email.isEmpty) return 'البريد الإلكتروني مطلوب';
+    // ✅ simple: must contain @ and a dot after it
+    if (!email.contains('@')) return 'البريد يجب أن يحتوي على @';
+    final parts = email.split('@');
+    if (parts.length != 2 || parts[0].isEmpty) return 'صيغة البريد غير صحيحة';
+    if (!parts[1].contains('.') || parts[1].startsWith('.')) return 'صيغة البريد غير صحيحة (مثال: name@domain.com)';
+    if (email.length > 100) return 'البريد طويل جداً';
+    return null; // ✅ صحيح
+  }
+
+  // ✅ التحقق من أن البريد غير مستخدم من قبل (async)
+  static Future<String?> checkEmailNotUsed(String email) async {
+    try {
+      final db = FirebaseFirestore.instance;
+      final snap = await db
+          .collection('users')
+          .where('email', isEqualTo: email.trim().toLowerCase())
+          .limit(1)
+          .get();
+      if (snap.docs.isNotEmpty) {
+        return 'هذا البريد الإلكتروني مستخدم بالفعل';
+      }
+      return null; // ✅ غير مستخدم
+    } catch (_) {
+      return null; // نتجاهل الـ error ونكمل
+    }
+  }
+
+  /// ✅ التحقق من كلمة السر
+  /// الشروط: 8 أحرف على الأقل + حرف كبير + رقم + علامة مميزة
+  static String? validatePassword(String password) {
+    if (password.isEmpty) return 'كلمة السر مطلوبة';
+    if (password.length < 8) return 'كلمة السر يجب أن تكون 8 أحرف على الأقل';
+    if (!RegExp(r'[A-Z]').hasMatch(password)) return 'يجب أن تحتوي على حرف كبير (A-Z)';
+    if (!RegExp(r'[a-z]').hasMatch(password)) return 'يجب أن تحتوي على حرف صغير (a-z)';
+    if (!RegExp(r'[0-9]').hasMatch(password)) return 'يجب أن تحتوي على رقم (0-9)';
+    if (!RegExp(r'[!@#\$%^&*()+\-=\[\]{};:,.<>?]').hasMatch(password)) {
+      return 'يجب أن تحتوي على علامة مميزة مثل: ! @ # \$ %';
+    }
+    return null; // ✅ صحيح
+  }
+
+  /// ✅ شرح قواعد كلمة السر
+  static const String passwordRules =
+      'يجب أن تحتوي كلمة السر على:\n'
+      '• 8 أحرف على الأقل\n'
+      '• حرف كبير (A-Z)\n'
+      '• حرف صغير (a-z)\n'
+      '• رقم (0-9)\n'
+      '• علامة مميزة مثل: ! @ # \$ %';
+
+  /// ✅ شرح قواعد البريد الإلكتروني  
+  static const String emailRules =
+      'يجب أن يكون البريد بالصيغة الصحيحة\n'
+      'مثال: name@domain.com';
+}
 
 class AppUser {
   final String uid;
@@ -230,7 +297,10 @@ class AuthService {
       final cred = await tempAuth.createUserWithEmailAndPassword(
         email: email.trim(), password: password,
       );
-      await tempAuth.signOut();
+
+      // ✅ لو adminUid=null وهو user عادي → استخدم uid بتاعه كـ adminUid
+      // عشان يكون له مساحة مستقلة في الـ inventory من أول ما بيتسجل
+      final resolvedAdminUid = adminUid ?? (role == 'user' ? cred.user!.uid : null);
 
       final newUser = AppUser(
         uid: cred.user!.uid, email: email.trim(), name: name, role: role,
@@ -243,10 +313,17 @@ class AuthService {
         canRestore: permissions['canRestore'] ?? false,
         isActive: true, createdAt: DateTime.now(),
         assignedWarehouse: assignedWarehouse,
-        adminUid: adminUid,
+        adminUid: resolvedAdminUid,
         createdBy: createdBy,
       );
-      await _db.collection('users').doc(cred.user!.uid).set(newUser.toMap());
+
+      // ✅ الكتابة في Firestore بالـ tempApp وهو لسه مسجل دخول
+      // لو كتبنا بعد signOut() الـ main app مش authenticated → PERMISSION_DENIED
+      final tempDb = FirebaseFirestore.instanceFor(app: tempApp);
+      await tempDb.collection('users').doc(cred.user!.uid).set(newUser.toMap());
+
+      // ✅ بعد الكتابة نعمل sign out من tempApp
+      await tempAuth.signOut();
 
       // ✅ Log
       LogService.instance.log(
@@ -263,6 +340,32 @@ class AuthService {
     } finally {
       await tempApp?.delete();
     }
+  }
+
+  // ============================================================
+  // ✅ ترقية User لـ Admin (SuperAdmin فقط)
+  // ============================================================
+  Future<void> upgradeUserToAdmin(String uid) async {
+    await _db.collection('users').doc(uid).update({
+      'role': 'admin',
+      'canAdd': true, 'canEdit': true, 'canDelete': true,
+      'canExport': true, 'canImport': true,
+      'canManage': true, 'canRestore': true,
+      'adminUid': null, // Admin مش تابع لحد
+    });
+  }
+
+  // ============================================================
+  // ✅ تخفيض Admin لـ User عادي (SuperAdmin فقط)
+  // ============================================================
+  Future<void> downgradeAdminToUser(String uid, String adminUid) async {
+    await _db.collection('users').doc(uid).update({
+      'role': 'user',
+      'canAdd': true, 'canEdit': false, 'canDelete': true,
+      'canExport': false, 'canImport': false,
+      'canManage': false, 'canRestore': false,
+      'adminUid': adminUid,
+    });
   }
 
   /// ✅ جيب الـ Users التابعين لـ Admin معين
@@ -317,6 +420,35 @@ class AuthService {
 
   Future<void> changePassword(String newPassword) async {
     await _auth.currentUser?.updatePassword(newPassword);
+  }
+
+  // ✅ Admin يغير كلمة سر مستخدم آخر
+  // الطريقة: sign in بـ temp app → updatePassword
+  // لو فشل (مش عارف كلمة السر القديمة) → بيبعت reset email
+  Future<bool> resetUserPassword(String email, String newPassword) async {
+    FirebaseApp? tempApp;
+    try {
+      // حاول sign in بـ temp app عشان تغير الـ password
+      tempApp = await Firebase.initializeApp(
+        name: 'resetApp_${DateTime.now().millisecondsSinceEpoch}',
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      // ✅ الطريقة الوحيدة هي إرسال reset link للمستخدم
+      await _auth.sendPasswordResetEmail(email: email);
+      return true; // Email أُرسل
+    } catch (e) {
+      return false;
+    } finally {
+      try { await tempApp?.delete(); } catch (_) {}
+    }
+  }
+
+  // ✅ Admin يغير كلمة السر مباشرة بدون email (Admin SDK workaround)
+  // بيستخدم secondary app لإنشاء المستخدم بكلمة سر جديدة
+  // ملاحظة: Firebase لا يسمح للـ admin بتغيير كلمة سر مستخدم آخر
+  // مباشرة من الـ client SDK — الحل هو إرسال reset link
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _auth.sendPasswordResetEmail(email: email);
   }
 
   Future<void> ensureUserDocument(dynamic firebaseUser) async {

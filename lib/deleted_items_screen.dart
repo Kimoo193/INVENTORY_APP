@@ -146,9 +146,13 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
         final item = _deletedItems[i];
         final reason = item['delete_reason']?.toString() ?? '';
         String rowColor = '#FFFFFF';
-        if (reason.contains('مباع')) rowColor = '#E3F2FD';
-        else if (reason.contains('تالف')) rowColor = '#FFEBEE';
-        else if (reason.contains('مرتجع')) rowColor = '#FFF3E0';
+        if (reason.contains('مباع')) {
+          rowColor = '#E3F2FD';
+        } else if (reason.contains('تالف')) {
+          rowColor = '#FFEBEE';
+        } else if (reason.contains('مرتجع')) {
+          rowColor = '#FFF3E0';
+        }
         final rowStyle = CellStyle(
           backgroundColorHex: ExcelColor.fromHexString(rowColor),
           horizontalAlign: HorizontalAlign.Right,
@@ -178,8 +182,10 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
       await file.writeAsBytes(excel.encode()!);
       await Share.shareXFiles([XFile(file.path)], text: 'سجل المحذوفات - Karam Stock');
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -268,7 +274,7 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
                                     margin: const EdgeInsets.only(left: 6),
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                        color: Colors.green.withOpacity(0.12),
+                                        color: Colors.green.withValues(alpha: 0.12),
                                         borderRadius: BorderRadius.circular(8)),
                                     child: const Text('مستعاد ✓',
                                         style: TextStyle(color: Colors.green,
@@ -278,7 +284,7 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                        color: reasonColor.withOpacity(0.12),
+                                        color: reasonColor.withValues(alpha: 0.12),
                                         borderRadius: BorderRadius.circular(8)),
                                     child: Text(reason,
                                         style: TextStyle(color: reasonColor,

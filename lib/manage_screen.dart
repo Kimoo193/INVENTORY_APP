@@ -252,7 +252,7 @@ class _ManageScreenState extends State<ManageScreen>
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: const Color(0xFF1A237E).withOpacity(0.1),
+              backgroundColor: const Color(0xFF1A237E).withValues(alpha: 0.1),
               child: Icon(
                 isWarehouse ? Icons.warehouse : Icons.inventory_2,
                 color: const Color(0xFF1A237E),

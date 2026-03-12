@@ -302,7 +302,9 @@ class LogService {
       int deleted = 0;
       for (final doc in snap.docs) {
         final evSnap = await doc.reference.collection('events').get();
-        for (final e in evSnap.docs) await e.reference.delete();
+        for (final e in evSnap.docs) {
+          await e.reference.delete();
+        }
         await doc.reference.delete();
         deleted++;
       }

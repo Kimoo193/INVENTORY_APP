@@ -39,6 +39,7 @@ class AppLocalizations {
   static String get excelAll => isArabic ? 'Excel - كل الأيام' : 'Excel - All Days';
   static String get logout => isArabic ? 'تسجيل الخروج' : 'Logout';
   static String get language => isArabic ? '🌐 English' : '🌐 عربي';
+  static String get superAdminPanel => isArabic ? 'لوحة Super Admin' : 'Super Admin Panel';
 
   // ---- Filter ----
   static String get filter => isArabic ? 'فلترة' : 'Filter';
@@ -112,4 +113,77 @@ class AppLocalizations {
   static String get noAddPermission => isArabic ? 'ليس لديك صلاحية الإضافة' : 'No add permission';
   static String get selectWarehouseFirst => isArabic ? 'اختار المخزن والمنتج أولاً' : 'Select warehouse and product first';
   static String get serialBarcode => isArabic ? 'السريال / Barcode' : 'Serial / Barcode';
+
+  // ---- Setup / Invitation Screen ----
+  static String get createAccount => isArabic ? 'إنشاء حساب جديد' : 'Create New Account';
+  static String get invitationVerified => isArabic ? 'تم التحقق من رمز الدعوة' : 'Invitation code verified';
+  static String get fullName => isArabic ? 'الاسم الكامل' : 'Full Name';
+  static String get email => isArabic ? 'البريد الإلكتروني' : 'Email Address';
+  static String get emailHint => isArabic ? 'مثال: name@domain.com' : 'Example: name@domain.com';
+  static String get password => isArabic ? 'كلمة السر' : 'Password';
+  static String get confirmPassword => isArabic ? 'تأكيد كلمة السر' : 'Confirm Password';
+  static String get createAccountBtn => isArabic ? 'إنشاء الحساب' : 'Create Account';
+  static String get accountCreated => isArabic ? 'تم إنشاء الحساب بنجاح!' : 'Account created successfully!';
+  static String get loginNow => isArabic ? 'تسجيل الدخول الآن' : 'Login Now';
+  static String get pendingReview => isArabic
+      ? 'تم إنشاء حسابك بنجاح، يمكنك تسجيل الدخول الآن\n\n⚠️ ملاحظة: حسابك قيد المراجعة من قبل المسؤول'
+      : 'Your account has been created.\n\n⚠️ Note: Your account is pending review by the admin.';
+
+  // ---- Password Rules ----
+  static String get passwordRequirements => isArabic ? 'متطلبات كلمة السر:' : 'Password requirements:';
+  static String get passMin8 => isArabic ? '8 أحرف على الأقل' : 'At least 8 characters';
+  static String get passUppercase => isArabic ? 'حرف كبير (A-Z)' : 'Uppercase letter (A-Z)';
+  static String get passLowercase => isArabic ? 'حرف صغير (a-z)' : 'Lowercase letter (a-z)';
+  static String get passNumber => isArabic ? 'رقم (0-9)' : 'Number (0-9)';
+  static String get passSpecial => isArabic ? 'علامة مميزة (! @ # \$ %)' : 'Special character (! @ # \$ %)';
+  static String get passwordMismatch => isArabic ? 'كلمتا السر غير متطابقتين' : 'Passwords do not match';
+  static String get passwordWrong => isArabic ? 'كلمة السر غير صحيحة' : 'Invalid password';
+  static String get okFix => isArabic ? 'حسناً، سأعدلها' : 'OK, I\'ll fix it';
+
+  // ---- Email Rules ----
+  static String get emailRequired => isArabic ? 'البريد الإلكتروني مطلوب' : 'Email is required';
+  static String get emailMustHaveAt => isArabic ? 'البريد يجب أن يحتوي على @' : 'Email must contain @';
+  static String get emailInvalid => isArabic ? 'صيغة البريد غير صحيحة' : 'Invalid email format';
+  static String get emailInvalidFull => isArabic
+      ? 'صيغة البريد غير صحيحة (مثال: name@domain.com)'
+      : 'Invalid email format (example: name@domain.com)';
+  static String get emailTooLong => isArabic ? 'البريد طويل جداً' : 'Email is too long';
+  static String get emailAlreadyUsed => isArabic ? 'هذا البريد الإلكتروني مستخدم بالفعل' : 'This email is already in use';
+
+  // ---- Users Management ----
+  static String get addUser => isArabic ? 'إضافة مستخدم جديد' : 'Add New User';
+  static String get accountType => isArabic ? 'نوع الحساب:' : 'Account Type:';
+  static String get assignedWarehouse => isArabic ? 'المخزن المخصص:' : 'Assigned Warehouse:';
+  static String get noRestriction => isArabic ? 'بدون تقييد (كل المخازن)' : 'No restriction (all warehouses)';
+  static String get permissions => isArabic ? 'الصلاحيات:' : 'Permissions:';
+  static String get nameRequired => isArabic ? 'الاسم مطلوب' : 'Name is required';
+  static String get fillAllFields => isArabic ? 'ارجاء ملء كل الحقول المطلوبة' : 'Please fill all required fields';
+  static String get accountCreatedSuccess => isArabic ? 'تم إنشاء الحساب بنجاح ✅' : 'Account created successfully ✅';
+  static String get upgradeToAdmin => isArabic ? 'ترقية لـ Admin' : 'Upgrade to Admin';
+  static String get upgradeConfirm => isArabic ? 'ترقية لـ Admin' : 'Upgrade to Admin';
+  static String get upgradeSuccess => isArabic ? 'تم الترقية بنجاح ✅' : 'Upgraded successfully ✅';
+  static String get stop => isArabic ? 'إيقاف' : 'Deactivate';
+
+  // ---- Permissions Labels ----
+  static String get permAdd => isArabic ? 'إضافة' : 'Add';
+  static String get permEdit => isArabic ? 'تعديل' : 'Edit';
+  static String get permDelete => isArabic ? 'حذف' : 'Delete';
+  static String get permRestore => isArabic ? 'استعادة من الحذف' : 'Restore deleted';
+  static String get permExport => isArabic ? 'تصدير Excel' : 'Export Excel';
+  static String get permImport => isArabic ? 'استيراد' : 'Import';
+  static String get permManage => isArabic ? 'إدارة القوائم' : 'Manage Lists';
+
+  // ---- Login Screen ----
+  static String get loginTitle => isArabic ? 'تسجيل الدخول' : 'Sign In';
+  static String get loginBtn => isArabic ? 'دخول' : 'Login';
+  static String get loginContinue => isArabic ? 'سجّل دخولك للمتابعة' : 'Sign in to continue';
+  static String get loginFailed => isArabic ? 'فشل تسجيل الدخول' : 'Login failed';
+  static String get loginWrongCredentials =>
+      isArabic ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة' : 'Incorrect email or password';
+  static String get loginInvalidEmail =>
+      isArabic ? 'صيغة البريد الإلكتروني غير صحيحة' : 'Invalid email format';
+  static String get loginUnexpectedError =>
+      isArabic ? 'حدث خطأ غير متوقع' : 'An unexpected error occurred';
+  static String get enterEmailAndPass =>
+      isArabic ? 'ادخل البريد وكلمة السر' : 'Enter email and password';
 }

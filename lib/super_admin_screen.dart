@@ -78,7 +78,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1A237E).withOpacity(0.1),
+                        color: const Color(0xFF1A237E).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.admin_panel_settings, color: Color(0xFF1A237E)),
@@ -158,6 +158,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     );
 
     if (result != true) return;
+    if (!mounted) return;
     if (nameCtrl.text.trim().isEmpty || emailCtrl.text.trim().isEmpty || passCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ارجاء ملء كل الحقول')));
@@ -165,10 +166,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     }
 
     final currentUser = await AuthService.instance.getCurrentUser();
+    if (!mounted) return;
     if (currentUser == null) return;
 
-    if (mounted) showDialog(context: context, barrierDismissible: false,
+    if (mounted) {
+      showDialog(context: context, barrierDismissible: false,
         builder: (_) => const Center(child: CircularProgressIndicator()));
+    }
 
     try {
       await AuthService.instance.createAdmin(
@@ -199,6 +203,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final passCtrl = TextEditingController();
     bool obscure = true;
     bool isActive = user.isActive;
+    // ✅ صلاحيات قابلة للتعديل
+    final Map<String, bool> perms = {
+      'canAdd':     user.canAdd,
+      'canEdit':    user.canEdit,
+      'canDelete':  user.canDelete,
+      'canExport':  user.canExport,
+      'canImport':  user.canImport,
+      'canManage':  user.canManage,
+      'canRestore': user.canRestore,
+    };
 
     final result = await showDialog<bool>(
       context: context,
@@ -214,7 +228,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 children: [
                   Row(children: [
                     CircleAvatar(
-                      backgroundColor: const Color(0xFF1A237E).withOpacity(0.1),
+                      backgroundColor: const Color(0xFF1A237E).withValues(alpha: 0.1),
                       child: Text(user.isAdmin ? '🔑' : '👤',
                           style: const TextStyle(fontSize: 18)),
                     ),
@@ -268,9 +282,34 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                             color: isActive ? Colors.green : Colors.red,
                             fontWeight: FontWeight.w600)),
                     value: isActive,
-                    activeColor: Colors.green,
+                    activeThumbColor: Colors.green,
                     onChanged: (v) => setSub(() => isActive = v),
                   )),
+
+                  // ✅ صلاحيات الـ User (مش للـ admin)
+                  if (!user.isAdmin) ...[
+                    const Divider(height: 20),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text('الصلاحيات:', style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade700,
+                      )),
+                    ),
+                    const SizedBox(height: 8),
+                    StatefulBuilder(builder: (_, setSub) => Wrap(
+                      spacing: 8, runSpacing: 6,
+                      children: [
+                        _permToggle(setSub, perms, 'canAdd', 'إضافة ➕'),
+                        _permToggle(setSub, perms, 'canEdit', 'تعديل ✏️'),
+                        _permToggle(setSub, perms, 'canDelete', 'حذف 🗑️'),
+                        _permToggle(setSub, perms, 'canExport', 'تصدير Excel 📊'),
+                        _permToggle(setSub, perms, 'canImport', 'استيراد 📥'),
+                        _permToggle(setSub, perms, 'canManage', 'إدارة القوائم 📋'),
+                        _permToggle(setSub, perms, 'canRestore', 'استعادة ♻️'),
+                      ],
+                    )),
+                  ],
                   const SizedBox(height: 16),
 
                   Row(children: [
@@ -308,14 +347,25 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
     if (result != true) return;
 
-    if (mounted) showDialog(context: context, barrierDismissible: false,
+    if (mounted) {
+      showDialog(context: context, barrierDismissible: false,
         builder: (_) => const Center(child: CircularProgressIndicator()));
+    }
 
     try {
-      // تحديث الاسم والـ isActive
+      // ✅ تحديث الاسم والـ isActive والصلاحيات
       await _db.collection('users').doc(user.uid).update({
         'name': nameCtrl.text.trim(),
         'isActive': isActive,
+        if (!user.isAdmin) ...{
+          'canAdd':     perms['canAdd'] ?? false,
+          'canEdit':    perms['canEdit'] ?? false,
+          'canDelete':  perms['canDelete'] ?? false,
+          'canExport':  perms['canExport'] ?? false,
+          'canImport':  perms['canImport'] ?? false,
+          'canManage':  perms['canManage'] ?? false,
+          'canRestore': perms['canRestore'] ?? false,
+        },
       });
 
       // لو في كلمة سر جديدة — عمل reset
@@ -385,6 +435,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     if (confirm != true) return;
 
     await _db.collection('users').doc(user.uid).update({'isActive': false});
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إيقاف الحساب')));
     _loadAll();
@@ -405,6 +456,130 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const _ActivityLogsView()),
+    );
+  }
+
+  // ============================================================
+  // ✅ ترقية User لـ Admin
+  // ============================================================
+  Future<void> _upgradeToAdmin(AppUser user) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('ترقية لـ Admin'),
+          content: Text('هتحول "${user.name}" لـ Admin بكل الصلاحيات؟'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green, foregroundColor: Colors.white),
+              child: const Text('ترقية'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await AuthService.instance.upgradeUserToAdmin(user.uid);
+      if (mounted) {
+        _loadAll();
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تم الترقية بنجاح ✅'), backgroundColor: Colors.green));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  // ============================================================
+  // ✅ ربط User بـ Admin معين (يشارك inventory الـ Admin)
+  // ============================================================
+  Future<void> _assignToAdmin(AppUser user) async {
+    AppUser? selectedAdmin;
+    final result = await showDialog<AppUser>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: StatefulBuilder(builder: (ctx, setS) => AlertDialog(
+          title: const Text('ربط بـ Admin'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('اختر الـ Admin اللي "${user.name}" هيشوف بياناته:',
+                  style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 12),
+              if (_admins.isEmpty)
+                const Text('لا يوجد admins حالياً', style: TextStyle(color: Colors.grey))
+              else
+                RadioGroup<AppUser>(
+                  groupValue: selectedAdmin,
+                  onChanged: (v) => setS(() => selectedAdmin = v),
+                  child: Column(
+                    children: _admins.map((admin) => RadioListTile<AppUser>(
+                      value: admin,
+                      title: Text(admin.name),
+                      subtitle: Text(admin.email, style: const TextStyle(fontSize: 11)),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    )).toList(),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            ElevatedButton(
+              onPressed: selectedAdmin == null ? null : () => Navigator.pop(ctx, selectedAdmin),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A237E), foregroundColor: Colors.white),
+              child: const Text('ربط'),
+            ),
+          ],
+        )),
+      ),
+    );
+    if (result == null) return;
+    try {
+      await _db.collection('users').doc(user.uid).update({'adminUid': result.uid});
+      if (mounted) {
+        _loadAll();
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('تم ربط "${user.name}" بـ "${result.name}" ✅'),
+                backgroundColor: Colors.green));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+    // ✅ Helper لعرض toggle للصلاحية — داخل _SuperAdminScreenState
+  Widget _permToggle(StateSetter setSub, Map<String, bool> perms, String key, String label) {
+    final active = perms[key] ?? false;
+    return GestureDetector(
+      onTap: () => setSub(() => perms[key] = !active),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF1A237E) : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label, style: TextStyle(
+          fontSize: 12,
+          color: active ? Colors.white : Colors.grey.shade600,
+          fontWeight: FontWeight.w500,
+        )),
+      ),
     );
   }
 
@@ -472,6 +647,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                     admins: _admins,
                     onEdit: _editUser,
                     onDelete: _confirmDeleteUser,
+                    onUpgrade: _upgradeToAdmin,
+                    onAssign: _assignToAdmin,
                   ),
                   _StatsTab(admins: _admins),
                 ],
@@ -612,7 +789,7 @@ class _AdminCardState extends State<_AdminCard> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: widget.admin.isActive
-                  ? const Color(0xFF1A237E).withOpacity(0.05)
+                  ? const Color(0xFF1A237E).withValues(alpha: 0.05)
                   : Colors.red.shade50,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
@@ -620,7 +797,7 @@ class _AdminCardState extends State<_AdminCard> {
               CircleAvatar(
                 radius: 22,
                 backgroundColor: widget.admin.isActive
-                    ? const Color(0xFF1A237E).withOpacity(0.15)
+                    ? const Color(0xFF1A237E).withValues(alpha: 0.15)
                     : Colors.red.shade100,
                 child: const Text('🔑', style: TextStyle(fontSize: 20)),
               ),
@@ -705,7 +882,7 @@ class _AdminCardState extends State<_AdminCard> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -726,18 +903,26 @@ class _UsersTab extends StatelessWidget {
   final List<AppUser> admins;
   final Function(AppUser) onEdit;
   final Function(AppUser) onDelete;
+  final Function(AppUser) onUpgrade;
+  final Function(AppUser) onAssign;
 
   const _UsersTab({
     required this.users,
     required this.admins,
     required this.onEdit,
     required this.onDelete,
+    required this.onUpgrade,
+    required this.onAssign,
   });
+
+  // ✅ Helper لعرض toggle للصلاحية
 
   String _getAdminName(String? adminUid) {
     if (adminUid == null) return 'غير مرتبط';
+    // ✅ users created via invitation have createdBy='invitation'
+    if (adminUid == 'invitation') return '🔗 دعوة مباشرة';
     final admin = admins.where((a) => a.uid == adminUid).firstOrNull;
-    return admin?.name ?? 'غير معروف';
+    return admin?.name ?? 'غير مرتبط';
   }
 
   @override
@@ -765,8 +950,8 @@ class _UsersTab extends StatelessWidget {
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: user.isActive
-                  ? Colors.green.withOpacity(0.1)
-                  : Colors.red.withOpacity(0.1),
+                  ? Colors.green.withValues(alpha: 0.1)
+                  : Colors.red.withValues(alpha: 0.1),
               child: Icon(Icons.person,
                   color: user.isActive ? Colors.green : Colors.red, size: 20),
             ),
@@ -782,7 +967,7 @@ class _UsersTab extends StatelessWidget {
                     margin: const EdgeInsets.only(top: 3),
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
+                      color: Colors.blue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text('🔑 ${_getAdminName(user.adminUid ?? user.createdBy)}',
@@ -795,7 +980,7 @@ class _UsersTab extends StatelessWidget {
                       margin: const EdgeInsets.only(top: 3),
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text('📦 ${user.assignedWarehouse}',
@@ -810,12 +995,23 @@ class _UsersTab extends StatelessWidget {
               onSelected: (v) {
                 if (v == 'edit') onEdit(user);
                 if (v == 'delete') onDelete(user);
+                if (v == 'upgrade') onUpgrade(user);
+                if (v == 'assign') onAssign(user);
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'edit',
                     child: Row(children: [
                       Icon(Icons.edit, size: 18, color: Colors.orange),
                       SizedBox(width: 8), Text('تعديل')])),
+                const PopupMenuItem(value: 'upgrade',
+                    child: Row(children: [
+                      Icon(Icons.arrow_upward, size: 18, color: Colors.green),
+                      SizedBox(width: 8), Text('ترقية لـ Admin',
+                          style: TextStyle(color: Colors.green))])),
+                const PopupMenuItem(value: 'assign',
+                    child: Row(children: [
+                      Icon(Icons.link, size: 18, color: Colors.blue),
+                      SizedBox(width: 8), Text('ربط بـ Admin')])),
                 const PopupMenuItem(value: 'delete',
                     child: Row(children: [
                       Icon(Icons.block, size: 18, color: Colors.red),
@@ -879,12 +1075,14 @@ class _StatsTabState extends State<_StatsTab> {
     final usersSnap = await _db.collection('users')
         .where('role', isEqualTo: 'user').count().get();
 
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _adminStats = stats;
       _totalItems = totalItems;
       _totalUsers = usersSnap.count ?? 0;
       _loading = false;
     });
+    }
   }
 
   @override
@@ -932,8 +1130,8 @@ class _StatsTabState extends State<_StatsTab> {
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: admin.isActive
-                              ? Colors.green.withOpacity(0.1)
-                              : Colors.red.withOpacity(0.1),
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.red.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(admin.isActive ? 'مفعّل' : 'موقوف',
@@ -970,7 +1168,7 @@ class _StatsTabState extends State<_StatsTab> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(children: [
@@ -989,7 +1187,7 @@ class _StatsTabState extends State<_StatsTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-          color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+          color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
       child: Text('$value $label',
           style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
     );
@@ -1178,7 +1376,7 @@ class _AdminInventoryViewState extends State<_AdminInventoryView> {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
-                                        color: cc.withOpacity(0.12),
+                                        color: cc.withValues(alpha: 0.12),
                                         borderRadius: BorderRadius.circular(8)),
                                     child: Text(item['condition'] ?? '',
                                         style: TextStyle(color: cc,
@@ -1307,8 +1505,10 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
     final db = FirebaseFirestore.instance;
     final adminUid = log['adminUid'] as String?;
     if (adminUid == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('تعذّر الاسترجاع — بيانات ناقصة')));
+      }
       return;
     }
     try {
@@ -1329,8 +1529,10 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
         _loadLogs(_selectedDate!);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -1359,11 +1561,13 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
       if (p.length != 3) return dateKey;
       final dt = DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]));
       final now = DateTime.now();
-      if (dt.year == now.year && dt.month == now.month && dt.day == now.day)
+      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
         return 'اليوم';
+      }
       final yes = now.subtract(const Duration(days: 1));
-      if (dt.year == yes.year && dt.month == yes.month && dt.day == yes.day)
+      if (dt.year == yes.year && dt.month == yes.month && dt.day == yes.day) {
         return 'أمس';
+      }
       return '${p[2]}/${p[1]}';
     } catch (_) {
       return dateKey;
@@ -1536,8 +1740,8 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
                         horizontal: 5, vertical: 1),
                     decoration: BoxDecoration(
                       color: selected
-                          ? Colors.white.withOpacity(0.3)
-                          : const Color(0xFF1A237E).withOpacity(0.15),
+                          ? Colors.white.withValues(alpha: 0.3)
+                          : const Color(0xFF1A237E).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -1592,7 +1796,7 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
               margin: const EdgeInsets.only(left: 8),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
               decoration: BoxDecoration(
-                color: sel ? color.withOpacity(0.12) : Colors.grey.shade100,
+                color: sel ? color.withValues(alpha: 0.12) : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                     color: sel ? color : Colors.transparent, width: 1.5),
@@ -1705,7 +1909,7 @@ class _LogCard extends StatelessWidget {
           Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 18),
@@ -1717,7 +1921,7 @@ class _LogCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(typeLabel,

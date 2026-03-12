@@ -2,6 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ============================================================
+    // Helper Functions
+    // ============================================================
+
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -19,43 +23,130 @@ service cloud.firestore {
       return isAuthenticated() && getUserData().role == 'superadmin';
     }
 
+    // ✅ الـ user ده تابع لـ adminUid ده؟
+    function belongsToAdmin(adminUid) {
+      return isAuthenticated() && (
+        request.auth.uid == adminUid ||
+        getUserData().adminUid == adminUid
+      );
+    }
+
+    // ✅ الـ user مفعّل؟
+    function isActiveUser() {
+      return isAuthenticated() && (getUserData().isActive == true);
+    }
+
+    // ✅ الـ user عنده صلاحية معينة؟
+    function hasPermission(perm) {
+      return isAuthenticated() && (
+        isAdmin() ||
+        getUserData()[perm] == true
+      );
+    }
+
     // ============================================================
     // Users Collection
     // ============================================================
     match /users/{userId} {
       allow read: if isAuthenticated() &&
         (request.auth.uid == userId || isAdmin());
+
+      allow list: if isAuthenticated();
+
       allow create: if isAuthenticated();
+
       allow update: if isAdmin() &&
         resource.data.role != 'superadmin';
+
       allow delete: if isSuperAdmin();
     }
 
     // ============================================================
-    // Notifications Collection
-    // notifications/{uid}/items/{notifId}
-    //
-    // - الكتابة: أي user مسجل دخول (عشان يبعت إشعار للـ admins)
-    // - القراءة: صاحب الـ uid بس (كل admin يقرأ إشعاراته بس)
-    // - التعديل (mark as read): صاحب الـ uid بس
+    // Notifications
     // ============================================================
     match /notifications/{userId}/items/{notifId} {
-      // أي user مسجل دخول يقدر يكتب إشعار لأي admin
       allow create: if isAuthenticated();
-
-      // بس صاحب الـ uid يقرأ ويعدّل إشعاراته
-      allow read, update: if isAuthenticated() &&
-        request.auth.uid == userId;
-
-      // مش بنسمح بحذف (الإشعارات بتتبقى كـ history)
+      allow read, update: if isAuthenticated() && request.auth.uid == userId;
       allow delete: if isAdmin();
     }
 
     // ============================================================
-    // باقي الـ Collections
+    // Activity Logs
     // ============================================================
-    match /{document=**} {
-      allow read, write: if isAuthenticated();
+    match /activity_logs/{dateId} {
+      allow read: if isAdmin();
+      allow write: if isAuthenticated();
+
+      match /events/{eventId} {
+        allow read: if isAdmin();
+        allow write: if isAuthenticated();
+      }
     }
+
+    // ============================================================
+    // Inventory — التنظيم الرئيسي
+    // inventory/{adminUid}/items
+    // inventory/{adminUid}/deleted_items
+    // inventory/{adminUid}/warehouses
+    // inventory/{adminUid}/products
+    // inventory/{adminUid}/dates         ← جديد
+    // ============================================================
+
+    match /inventory/{adminUid} {
+      // ✅ قراءة metadata الـ inventory (migrated flag)
+      allow read: if belongsToAdmin(adminUid) && isActiveUser();
+      allow write: if isAuthenticated() && request.auth.uid == adminUid;
+
+      // ── Items ──
+      match /items/{itemId} {
+        allow read: if belongsToAdmin(adminUid) && isActiveUser();
+        allow create: if belongsToAdmin(adminUid) && isActiveUser() && hasPermission('canAdd');
+        allow update: if belongsToAdmin(adminUid) && isActiveUser() && hasPermission('canEdit');
+        allow delete: if belongsToAdmin(adminUid) && isActiveUser() && hasPermission('canDelete');
+      }
+
+      // ── Deleted Items ──
+      match /deleted_items/{itemId} {
+        // ✅ القراءة: admin يقرأ الكل، user يقرأ اللي حذفه هو بس
+        allow read: if belongsToAdmin(adminUid) && isActiveUser() && (
+          isAdmin() ||
+          resource.data.deletedByUid == request.auth.uid
+        );
+        // ✅ create: يتم من deleteWithReason — محتاج canDelete
+        allow create: if belongsToAdmin(adminUid) && isActiveUser() && hasPermission('canDelete');
+        // ✅ update: للـ restore — محتاج canRestore
+        allow update: if belongsToAdmin(adminUid) && isActiveUser() && hasPermission('canRestore');
+        // ✅ delete: حذف نهائي — admin فقط
+        allow delete: if belongsToAdmin(adminUid) && isAdmin();
+      }
+
+      // ── Warehouses ──
+      match /warehouses/{warehouseId} {
+        allow read: if belongsToAdmin(adminUid) && isActiveUser();
+        allow write: if belongsToAdmin(adminUid) && isActiveUser() && (hasPermission('canManage') || hasPermission('canImport'));
+      }
+
+      // ── Products ──
+      match /products/{productId} {
+        allow read: if belongsToAdmin(adminUid) && isActiveUser();
+        allow write: if belongsToAdmin(adminUid) && isActiveUser() && (hasPermission('canManage') || hasPermission('canImport'));
+      }
+
+      // ── Dates ← جديدة ──
+      // ✅ collection خفيفة — document لكل تاريخ جرد
+      // بتحل مشكلة getInventoryDates اللي كانت بتجيب كل الـ items
+      match /dates/{dateId} {
+        allow read: if belongsToAdmin(adminUid) && isActiveUser();
+        // ✅ write: أي user مسموح له يضيف items يقدر يضيف date
+        allow write: if belongsToAdmin(adminUid) && isActiveUser() && hasPermission('canAdd');
+      }
+    }
+
+    // ============================================================
+    // ✅ مفيش broad fallback — أي collection تانية محظورة تلقائياً
+    // ============================================================
+    // قبل كان: match /{document=**} { allow read, write: if isAuthenticated(); }
+    // ده كان خطر — أي user مسجل دخول يقدر يقرأ ويكتب أي حاجة
+    // دلوقتي: كل collection محددة صريحة
   }
 }

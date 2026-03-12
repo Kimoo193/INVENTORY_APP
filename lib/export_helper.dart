@@ -6,11 +6,6 @@ import 'firestore_service.dart';
 import 'auth_service.dart';
 
 class ExportHelper {
-  static String _todayString() {
-    final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
-  }
-
   static String _formatDateForFile(String date) {
     final parts = date.split('-');
     if (parts.length == 3) return '${parts[2]}-${parts[1]}-${parts[0]}';
@@ -59,9 +54,13 @@ class ExportHelper {
         ];
 
         String bgColor = '#FFFFFF';
-        if (item.condition == 'تالف') bgColor = '#FFEBEE';
-        else if (item.condition == 'مستخدم') bgColor = '#FFF3E0';
-        else if (item.condition == 'جديد') bgColor = '#E8F5E9';
+        if (item.condition == 'تالف') {
+          bgColor = '#FFEBEE';
+        } else if (item.condition == 'مستخدم') {
+          bgColor = '#FFF3E0';
+        } else if (item.condition == 'جديد') {
+          bgColor = '#E8F5E9';
+        }
 
         for (int j = 0; j < rowData.length; j++) {
           final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: j, rowIndex: i + 1));
@@ -120,9 +119,13 @@ class ExportHelper {
           _formatDateDisplay(item.inventoryDate),
         ];
         String bgColor = '#FFFFFF';
-        if (item.condition == 'تالف') bgColor = '#FFEBEE';
-        else if (item.condition == 'مستخدم') bgColor = '#FFF3E0';
-        else if (item.condition == 'جديد') bgColor = '#E8F5E9';
+        if (item.condition == 'تالف') {
+          bgColor = '#FFEBEE';
+        } else if (item.condition == 'مستخدم') {
+          bgColor = '#FFF3E0';
+        } else if (item.condition == 'جديد') {
+          bgColor = '#E8F5E9';
+        }
 
         for (int j = 0; j < rowData.length; j++) {
           final cell = summarySheet.cell(

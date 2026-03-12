@@ -7,7 +7,8 @@ import 'log_service.dart';
 
 // ============================================================
 // AuthWrapper — يتحكم في توجيه المستخدم بناءً على حالة الـ Auth
-// ✅ StatefulWidget عشان نقدر نتعامل مع الـ logout صح
+// ✅ الـ AuthWrapper يفضل في الـ widget tree دايماً
+//    عشان يسمع الـ authStateChanges حتى بعد دخول الـ HomeScreen
 // ============================================================
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key, required this.authenticatedHome});
@@ -18,198 +19,233 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  // ✅ نتذكر آخر حالة للـ user — لو كان logged in وبقى logged out نعمل redirect
-  bool _wasLoggedIn = false;
+  bool _showSplash = false;
+  bool _showHome  = false;
+  // ignore: unused_field
+  AppUser? _appUser;
 
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-
-        // جاري التحميل
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _LoadingScreen();
-        }
-
-        final firebaseUser = snapshot.data;
-
-        // ✅ مش مسجل دخول
-        if (firebaseUser == null) {
-          NotificationService.instance.stopListening();
-
-          // ✅ لو كان logged in قبل (logout حصل) — امسح كل الـ stack
-          if (_wasLoggedIn) {
-            _wasLoggedIn = false;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                // امسح كل الـ routes وارجع للـ root (اللي هو AuthWrapper نفسه)
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
-            });
-          }
-
-          return const LoginScreen();
-        }
-
-        // ✅ مسجل دخول
-        return FutureBuilder<AppUser?>(
-          future: AuthService.instance.getCurrentUser(),
-          builder: (context, userSnapshot) {
-
-            if (userSnapshot.connectionState == ConnectionState.waiting) {
-              return const _LoadingScreen();
-            }
-
-            final appUser = userSnapshot.data;
-
-            // لو الحساب موقوف
-            if (appUser != null && !appUser.isActive) {
-              FirebaseAuth.instance.signOut();
-              return const LoginScreen();
-            }
-
-            // ✅ سجّل إن المستخدم مسجل دخول دلوقتي
-            _wasLoggedIn = true;
-
-            // ✅ ابدأ الـ Notifications للـ Admins
-            if (appUser != null && appUser.isAdmin) {
-              NotificationService.instance.startListening(firebaseUser.uid);
-            }
-
-            // ✅ Log Login — بس مرة واحدة (مش كل rebuild)
-            if (appUser != null) {
-              _logLoginOnce(appUser);
-            }
-
-            // لو مش موجود في Firestore
-            if (appUser == null) {
-              _ensureUserDocument(firebaseUser);
-            }
-
-            return _SplashThenHome(home: widget.authenticatedHome);
-          },
-        );
-      },
-    );
-  }
-
-  // ✅ Log login مرة واحدة بس — نستخدم flag
   String? _lastLoggedUid;
-  void _logLoginOnce(AppUser user) {
-    if (_lastLoggedUid == user.uid) return;
-    _lastLoggedUid = user.uid;
-    LogService.instance.logLogin(user);
-  }
 
-  void _ensureUserDocument(User firebaseUser) async {
-    try {
-      await AuthService.instance.ensureUserDocument(firebaseUser);
-    } catch (_) {}
-  }
-}
-
-// ============================================================
-// Loading Screen
-// ============================================================
-class _LoadingScreen extends StatelessWidget {
-  const _LoadingScreen();
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF1A237E),
-      body: Center(child: CircularProgressIndicator(color: Colors.white)),
-    );
-  }
-}
-
-// ============================================================
-// Splash Screen ثم Home
-// ============================================================
-class _SplashThenHome extends StatefulWidget {
-  final Widget home;
-  const _SplashThenHome({required this.home});
-
-  @override
-  State<_SplashThenHome> createState() => _SplashThenHomeState();
-}
-
-class _SplashThenHomeState extends State<_SplashThenHome> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => widget.home),
-        );
-      }
-    });
+    FirebaseAuth.instance.authStateChanges().listen(_onAuthChanged);
   }
+
+  Future<void> _onAuthChanged(User? firebaseUser) async {
+    if (firebaseUser == null) {
+      // ✅ Logout — وقّف الـ notifications وارجع للـ login
+      NotificationService.instance.stopListening();
+      if (mounted) {
+        setState(() {
+          _showSplash = false;
+          _showHome   = false;
+          _appUser    = null;
+          _lastLoggedUid = null;
+        });
+      }
+      return;
+    }
+
+    // ✅ Login — جيب بيانات الـ user
+    final appUser = await AuthService.instance.getCurrentUser();
+
+    // لو الحساب موقوف
+    if (appUser != null && !appUser.isActive) {
+      await FirebaseAuth.instance.signOut();
+      return;
+    }
+
+    // لو مش موجود في Firestore
+    if (appUser == null) {
+      try {
+        await AuthService.instance.ensureUserDocument(firebaseUser);
+      } catch (_) {}
+    }
+
+    // ✅ ابدأ الـ Notifications للـ Admins
+    if (appUser != null && appUser.isAdmin) {
+      NotificationService.instance.startListening(firebaseUser.uid);
+    }
+
+    // ✅ Log Login مرة واحدة بس
+    if (appUser != null && _lastLoggedUid != appUser.uid) {
+      _lastLoggedUid = appUser.uid;
+      LogService.instance.logLogin(appUser);
+    }
+
+    if (mounted) {
+      setState(() {
+        _appUser    = appUser;
+        _showSplash = true;
+        _showHome   = false;
+      });
+    }
+
+    // ✅ بعد 3 ثواني انتقل للـ Home
+    await Future.delayed(const Duration(seconds: 3));
+    if (mounted && _showSplash) {
+      setState(() {
+        _showSplash = false;
+        _showHome   = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // ✅ مش مسجل دخول
+    if (!_showSplash && !_showHome) {
+      return const LoginScreen();
+    }
+
+    // ✅ Splash Screen
+    if (_showSplash) {
+      return const _SplashScreen();
+    }
+
+    // ✅ Home Screen
+    return widget.authenticatedHome;
+  }
+}
+
+// ============================================================
+// Splash Screen
+// ============================================================
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A237E),
-      body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(),
-            Center(
-              child: Container(
-                width: 120, height: 120,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 20, offset: const Offset(0, 8),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF16324F), Color(0xFF23476B), Color(0xFF0F2236)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned(
+                top: -30,
+                left: -20,
+                child: Container(
+                  width: 160,
+                  height: 160,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC69749).withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 120,
+                right: -40,
+                child: Container(
+                  width: 180,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Column(
+                children: [
+                  const Spacer(),
+                  Center(
+                    child: Container(
+                      width: 128,
+                      height: 128,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(32),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            blurRadius: 30,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.inventory_2_rounded, size: 72, color: Color(0xFF16324F)),
                     ),
-                  ],
-                ),
-                child: const Icon(Icons.inventory_2, size: 70, color: Color(0xFF1A237E)),
+                  ),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Karam Stock',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                    ),
+                    child: const Text(
+                      'جاري تجهيز مساحة العمل الخاصة بك',
+                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                    ),
+                    child: const Column(
+                      children: [
+                        SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation(Color(0xFFC69749)),
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          '🤍 اللهم صلِّ وسلم على نبينا محمد 🤍',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            height: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 26),
+                    child: Text(
+                      'BY : Kareem Mohamed',
+                      style: TextStyle(
+                        color: Colors.grey.shade300,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Karam Stock',
-              style: TextStyle(
-                color: Colors.white, fontSize: 32,
-                fontWeight: FontWeight.bold, letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(50),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: const Text(
-                '🤍  اللهم صلِّ وسلم على نبينا محمد  🤍',
-                style: TextStyle(
-                  color: Colors.white, fontSize: 16,
-                  fontWeight: FontWeight.w500, height: 1.6,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const Spacer(),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 24),
-              child: Text(
-                'BY : Kareem Mohamed',
-                style: TextStyle(
-                  color: Colors.white70, fontSize: 16, letterSpacing: 1.5,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

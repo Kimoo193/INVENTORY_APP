@@ -295,8 +295,9 @@ class _AddItemScreenState extends State<AddItemScreen> {
   void initState() {
     super.initState();
     _loadDropdowns();
-    if (widget.initialSerial != null)
+    if (widget.initialSerial != null) {
       _serialController.text = widget.initialSerial!;
+    }
     if (widget.itemToEdit != null) {
       final item = widget.itemToEdit!;
       _selectedWarehouse = item.warehouseName;
@@ -413,7 +414,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                           : null,
                       tileColor: isSelected
                           ? const Color(0xFF1A237E)
-                              .withOpacity(0.08)
+                              .withValues(alpha: 0.08)
                           : null,
                       onTap: () {
                         setState(
@@ -484,7 +485,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                     : null,
                 tileColor: w == _selectedWarehouse
                     ? const Color(0xFF1A237E)
-                        .withOpacity(0.08)
+                        .withValues(alpha: 0.08)
                     : null,
                 onTap: () {
                   setState(() => _selectedWarehouse = w);
@@ -564,12 +565,14 @@ class _AddItemScreenState extends State<AddItemScreen> {
       context,
       MaterialPageRoute(builder: (_) => const ScannerScreen()),
     );
-    if (result != null)
+    if (result != null) {
       setState(() => _serialController.text = result);
+    }
   }
 
   Future<void> _save() async {
     final currentUser = await AuthService.instance.getCurrentUser();
+    if (!mounted) return;
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('يجب تسجيل الدخول أولاً')),

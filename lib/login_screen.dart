@@ -24,16 +24,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (_emailController.text.isEmpty || _passController.text.isEmpty) {
+    final email = _emailController.text.trim();
+    final pass  = _passController.text;
+
+    if (email.isEmpty || pass.isEmpty) {
       setState(() => _error = 'ادخل البريد وكلمة السر');
       return;
     }
+
     setState(() { _loading = true; _error = ''; });
     try {
-      await AuthService.instance.login(
-        _emailController.text,
-        _passController.text,
-      );
+      await AuthService.instance.login(email, pass);
       // AuthWrapper هيتعرف تلقائياً
     } on FirebaseAuthException catch (e) {
       String msg = 'فشل تسجيل الدخول';
@@ -57,147 +58,213 @@ class _LoginScreenState extends State<LoginScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF1A237E),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF16324F), Color(0xFF244A70), Color(0xFFF6F4EE)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: [0.0, 0.55, 1.0],
+            ),
+          ),
+          child: SafeArea(
+            child: Stack(
               children: [
-                const SizedBox(height: 40),
-                // أيقونة
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
+                Positioned(
+                  top: -40,
+                  right: -10,
+                  child: Container(
+                    width: 150,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC69749).withValues(alpha: 0.18),
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                  child: const Icon(Icons.inventory_2, size: 60, color: Color(0xFF1A237E)),
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Karam Stock',
-                  style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  '🤍  اللهم صلِّ وسلم على نبينا محمد  🤍',
-                  style: TextStyle(color: Colors.white60, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'سجّل دخولك للمتابعة',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
-                ),
-                const SizedBox(height: 48),
-
-                // Card تسجيل الدخول
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
+                Positioned(
+                  top: 120,
+                  left: -30,
+                  child: Container(
+                    width: 110,
+                    height: 110,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
                   ),
+                ),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      const SizedBox(height: 18),
+                      Container(
+                        width: 104,
+                        height: 104,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.16),
+                              blurRadius: 28,
+                              offset: const Offset(0, 12),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.inventory_2_rounded, size: 58, color: Color(0xFF16324F)),
+                      ),
+                      const SizedBox(height: 22),
                       const Text(
-                        'تسجيل الدخول',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        'Karam Stock',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        child: const Text(
+                          'مخزونك منظم. الوصول أسرع. والمتابعة أوضح.',
+                          style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '🤍 اللهم صلِّ وسلم على نبينا محمد 🤍',
+                        style: TextStyle(color: Colors.white60, fontSize: 12),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 24),
-
-                      // البريد الإلكتروني
-                      TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        textDirection: TextDirection.ltr,
-                        decoration: InputDecoration(
-                          labelText: 'البريد الإلكتروني',
-                          prefixIcon: const Icon(Icons.email_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      const SizedBox(height: 34),
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.96),
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF16324F).withValues(alpha: 0.14),
+                              blurRadius: 28,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'تسجيل الدخول',
+                              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'استخدم بريدك وكلمة السر للوصول إلى لوحة المخزون.',
+                              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                            ),
+                            const SizedBox(height: 24),
+                            TextField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              textDirection: TextDirection.ltr,
+                              decoration: InputDecoration(
+                                labelText: 'البريد الإلكتروني',
+                                prefixIcon: const Icon(Icons.alternate_email_rounded),
+                                filled: true,
+                                fillColor: const Color(0xFFF6F4EE),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: const BorderSide(color: Color(0xFF16324F), width: 1.3),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _passController,
+                              obscureText: _obscure,
+                              textDirection: TextDirection.ltr,
+                              onSubmitted: (_) => _login(),
+                              decoration: InputDecoration(
+                                labelText: 'كلمة السر',
+                                prefixIcon: const Icon(Icons.lock_outline_rounded),
+                                suffixIcon: IconButton(
+                                  icon: Icon(_obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+                                  onPressed: () => setState(() => _obscure = !_obscure),
+                                ),
+                                filled: true,
+                                fillColor: const Color(0xFFF6F4EE),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: const BorderSide(color: Color(0xFF16324F), width: 1.3),
+                                ),
+                              ),
+                            ),
+                            if (_error.isNotEmpty) ...[
+                              const SizedBox(height: 14),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Colors.red.shade200),
+                                ),
+                                child: Text(
+                                  _error,
+                                  style: TextStyle(color: Colors.red.shade700, fontSize: 13, fontWeight: FontWeight.w600),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 24),
+                            SizedBox(
+                              height: 54,
+                              child: ElevatedButton(
+                                onPressed: _loading ? null : _login,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF16324F),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                ),
+                                child: _loading
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.3),
+                                      )
+                                    : const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text('دخول', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                                          SizedBox(width: 8),
+                                          Icon(Icons.arrow_forward_rounded, size: 18),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 16),
-
-                      // كلمة السر
-                      TextField(
-                        controller: _passController,
-                        obscureText: _obscure,
-                        textDirection: TextDirection.ltr,
-                        onSubmitted: (_) => _login(),
-                        decoration: InputDecoration(
-                          labelText: 'كلمة السر',
-                          prefixIcon: const Icon(Icons.lock_outlined),
-                          suffixIcon: IconButton(
-                            icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-                            onPressed: () => setState(() => _obscure = !_obscure),
-                          ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        ),
-                      ),
-
-                      if (_error.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.red.shade200),
-                          ),
-                          child: Text(
-                            _error,
-                            style: TextStyle(color: Colors.red.shade700, fontSize: 13),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 24),
-
-                      // زرار الدخول
-                      SizedBox(
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: _loading ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1A237E),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: _loading
-                              ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                              : const Text('دخول', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                        ),
+                      Text(
+                        'BY : Kareem Mohamed',
+                        style: TextStyle(color: Colors.grey.shade200, fontSize: 14, fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
-                ),
-
-                
-                const SizedBox(height: 12),
-                const Text(
-                  'BY : Kareem Mohamed',
-                  style: TextStyle(color: Colors.white70, fontSize: 16),
                 ),
               ],
             ),
