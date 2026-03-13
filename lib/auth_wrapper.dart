@@ -4,6 +4,8 @@ import 'login_screen.dart';
 import 'auth_service.dart';
 import 'notification_service.dart';
 import 'log_service.dart';
+import 'hive_service.dart';
+import 'sync_engine.dart';
 
 // ============================================================
 // AuthWrapper — يتحكم في توجيه المستخدم بناءً على حالة الـ Auth
@@ -34,8 +36,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   Future<void> _onAuthChanged(User? firebaseUser) async {
     if (firebaseUser == null) {
-      // ✅ Logout — وقّف الـ notifications وارجع للـ login
+      // ✅ Logout — stop sync, clear local cache, go to login
       NotificationService.instance.stopListening();
+      SyncEngine.instance.stop();
+      await HiveService.instance.clearAll();
       if (mounted) {
         setState(() {
           _showSplash = false;
@@ -67,6 +71,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
     if (appUser != null && appUser.isAdmin) {
       NotificationService.instance.startListening(firebaseUser.uid);
     }
+
+    // ✅ Start SyncEngine + seed Hive from Firestore (first launch only)
+    await SyncEngine.instance.start();
+    SyncEngine.instance.seedIfNeeded(); // fire-and-forget during splash
 
     // ✅ Log Login مرة واحدة بس
     if (appUser != null && _lastLoggedUid != appUser.uid) {

@@ -5,6 +5,7 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'dart:io';
 import 'firestore_service.dart';
 import 'auth_service.dart';
+import 'inventory_repository.dart';
 
 // ============================================================
 // Smart Header Detector — بيتعرف على أي Excel بغض النظر عن
@@ -57,9 +58,13 @@ class SmartHeaderDetector {
 
   static const _conditionNames = [
     'condition', 'status', 'state', 'quality', 'grade',
+    'inventoried quantity',
+    'inventoried qty',
+    'quantity inventoried',
+    'counted quantity',
+    'qty counted',
     'الحالة', 'حالة الجهاز', 'الوضع', 'الجودة', 'نوع الحالة',
-    // ✅ Odoo: عمود الكمية اللي فيه الحالة مدمجة
-    'inventoried quantity', 'الكمية المجردة',
+    'الكمية المجردة',
   ];
 
   static const _expiryNames = [
@@ -301,16 +306,14 @@ class _ImportScreenState extends State<ImportScreen> {
       if (product.startsWith('[محذوف]') || product.startsWith('[deleted]')) { continue; }
       // ✅ تجاهل سطور الـ totals
       if (product.toLowerCase().contains('total') ||
-          product.toLowerCase().contains('إجمالي')) { continue; }
+          product.toLowerCase().contains('إجمالي')) continue;
 
       if (expiry == '-' || expiry == 'N/A' || expiry == 'n/a') expiry = '';
-      final notes = (notesRaw == '-' || notesRaw == 'N/A') ? '' : notesRaw;
-
-      // ✅ Odoo: استخراج ملاحظات من عمود الكمية/الحالة
-      final quantityNotes = _extractNotesFromQuantity(condRaw);
-      final combinedNotes = [notes, quantityNotes]
-          .where((n) => n.isNotEmpty)
-          .join(' — ');
+        final baseNotes = (notesRaw == '-' || notesRaw == 'N/A' || notesRaw == 'n/a')
+          ? ''
+          : notesRaw;
+        final quantityNotes = _extractNotesFromQuantity(condRaw);
+        final notes = _mergeNotes(baseNotes, quantityNotes);
 
       items.add({
         'product': product.isEmpty ? 'غير محدد' : product,
@@ -318,7 +321,7 @@ class _ImportScreenState extends State<ImportScreen> {
         'serial': serial,
         'condition': _normalizeCondition(condRaw),
         'expiry': expiry,
-        'notes': combinedNotes,
+        'notes': notes,
       });
     }
 
@@ -638,49 +641,74 @@ class _ImportScreenState extends State<ImportScreen> {
   String _normalizeCondition(String raw) {
     final r = raw.toLowerCase().trim();
     if (r.isEmpty || r == 'جديد' || r == 'new' || r == 'good') return 'جديد';
-    if (r.contains('مستخدم') || r.contains('used') || r.contains('refurb')) { return 'مستخدم'; }
-    if (r.contains('تالف') || r.contains('عاطل') || r.contains('damaged') ||
-        r.contains('broken') || r.contains('faulty') || r.contains('scrap')) { return 'تالف'; }
-    // ✅ Odoo Inventoried Quantity: "1مبدل تالف" → تالف
-    final stripped = r.replaceFirst(RegExp(r'^\d+\s*'), '');
-    if (stripped.contains('تالف') || stripped.contains('مبدل تالف')) { return 'تالف'; }
-    if (stripped.contains('مستخدم')) { return 'مستخدم'; }
-    // ✅ Odoo: "مباع" → مستخدم
-    if (stripped.contains('مباع')) { return 'مستخدم'; }
+
+    // Odoo sometimes puts quantity prefix in the same cell, e.g. "1موجودة".
+    final normalized = r.replaceFirst(RegExp(r'^\d+\s*'), '').trim();
+    if (normalized.isEmpty) return 'جديد';
+
+    if (normalized.contains('مستخدم') ||
+        normalized.contains('used') ||
+        normalized.contains('refurb')) {
+      return 'مستخدم';
+    }
+
+    if (normalized.contains('تالف') ||
+        normalized.contains('عاطل') ||
+        normalized.contains('damaged') ||
+        normalized.contains('broken') ||
+        normalized.contains('faulty') ||
+        normalized.contains('scrap')) {
+      return 'تالف';
+    }
+
+    if (normalized.contains('مباع') || normalized.contains('sold')) return 'مستخدم';
+    if (normalized.contains('موجود') || normalized.contains('available')) return 'جديد';
+
     return 'جديد';
   }
 
-  // ✅ Odoo: استخراج ملاحظات من عمود الكمية
   String _extractNotesFromQuantity(String raw) {
     final r = raw.trim();
     if (r.isEmpty) return '';
-    final stripped = r.replaceFirst(RegExp(r'^\d+\s*'), '');
-    if (stripped.isEmpty) return '';
-    // حالات عادية بدون ملاحظات
-    if (RegExp(r'^موجود[ةه]?\s*$').hasMatch(stripped)) return '';
-    if (RegExp(r'^موجود[ةه]?\s*(مستخدم|جديد)\s*$').hasMatch(stripped)) return '';
-    if (stripped == 'مبدل تالف' || stripped == 'تالف' || stripped == 'مستخدم') return '';
-    // "مباع بتاريخ اليوم" → ملاحظة: مباع
-    if (stripped.contains('مباع')) return 'مباع';
-    // "تم بيعها اليوم" → ملاحظة: تم بيعها اليوم
-    if (stripped.contains('بيع')) return stripped;
-    // أي نص تاني زي "لم استلمها ولم تشحن" → ملاحظة كاملة
-    if (stripped.length > 2) return stripped;
-    return '';
+
+    final normalized = r.toLowerCase().replaceFirst(RegExp(r'^\d+\s*'), '').trim();
+    if (normalized.isEmpty) return '';
+
+    if (normalized.contains('مباع')) return 'مباع';
+    if (normalized.contains('لم استلمها ولم تشحن')) return 'لم استلمها ولم تشحن';
+
+    // Pure condition markers should not become notes.
+    if (normalized.contains('موجود') ||
+        normalized == 'جديد' ||
+        normalized.contains('مستخدم') ||
+        normalized.contains('تالف') ||
+        normalized.contains('عاطل')) {
+      return '';
+    }
+
+    return normalized;
+  }
+
+  String _mergeNotes(String base, String extra) {
+    if (base.isEmpty) return extra;
+    if (extra.isEmpty) return base;
+    if (base == extra) return base;
+    return '$base | $extra';
   }
 
   String _normalizeWarehouse(String raw) {
     final r = raw.trim();
     if (r.isEmpty) return _defaultWarehouse;
-    // ✅ normalize أسماء المخازن الشائعة (بيدعم W\H أو WH)
-    if (RegExp(r'W[\\\/ ]?H\s*42', caseSensitive: false).hasMatch(r)) return 'WH42/مخزن محمد مرسي';
-    if (RegExp(r'W[\\\/ ]?H\s*32', caseSensitive: false).hasMatch(r)) return 'Stock 1';
-    // ✅ Odoo Location: "W\H32/مخزن محمد مرسي" → استخراج اسم المخزن بعد آخر /
+
+    // Odoo location can be hierarchical, keep the last segment as display name.
     if (r.contains('/')) {
-      final parts = r.split('/');
-      final lastPart = parts.last.trim();
-      if (lastPart.isNotEmpty && lastPart.length > 1) return lastPart;
+      final lastSegment = r.split('/').last.trim();
+      if (lastSegment.isNotEmpty) return lastSegment;
     }
+
+    // ✅ normalize أسماء المخازن الشائعة
+    if (RegExp(r'WH\s*42', caseSensitive: false).hasMatch(r)) return 'WH42/مخزن محمد مرسي';
+    if (RegExp(r'W\\?H\s*32', caseSensitive: false).hasMatch(r)) return 'Stock 1';
     return r;
   }
 
@@ -715,8 +743,8 @@ class _ImportScreenState extends State<ImportScreen> {
       addedByUid: _currentUser?.uid,
     )).toList();
 
-    // ✅ Batch insert — أسرع بكتير من واحدة واحدة
-    final saved = await FirestoreService.instance.insertItemsBatch(firestoreItems);
+    // ✅ Batch insert to Hive first — instant, queued to Firestore
+    final saved = await InventoryRepository.instance.insertItemsBatch(firestoreItems);
 
     setState(() {
       _loading = false;
@@ -809,7 +837,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  initialValue: condition,
+                  value: condition,
                   decoration: const InputDecoration(labelText: 'الحالة', border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(value: 'جديد', child: Text('جديد')),
@@ -852,7 +880,7 @@ class _ImportScreenState extends State<ImportScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('استيراد بيانات'),
-          backgroundColor: const Color(0xFF1A237E),
+          backgroundColor: const Color(0xFF16324F),
           foregroundColor: Colors.white,
         ),
         body: _loading
@@ -860,7 +888,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const CircularProgressIndicator(color: Color(0xFF1A237E)),
+                    const CircularProgressIndicator(color: Color(0xFF16324F)),
                     const SizedBox(height: 16),
                     Text(_status, style: const TextStyle(fontSize: 16)),
                   ],
@@ -876,10 +904,10 @@ class _ImportScreenState extends State<ImportScreen> {
                       elevation: 1,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
-                        leading: const Icon(Icons.calendar_today, color: Color(0xFF1A237E)),
+                        leading: const Icon(Icons.calendar_today, color: Color(0xFF16324F)),
                         title: const Text('تاريخ الجرد'),
                         subtitle: Text(_formatDate(_selectedDate!)),
-                        trailing: const Icon(Icons.edit, color: Color(0xFF1A237E), size: 18),
+                        trailing: const Icon(Icons.edit, color: Color(0xFF16324F), size: 18),
                         onTap: _pickDate,
                       ),
                     ),
@@ -890,10 +918,10 @@ class _ImportScreenState extends State<ImportScreen> {
                       elevation: 1,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
-                        leading: const Icon(Icons.warehouse, color: Color(0xFF1A237E)),
+                        leading: const Icon(Icons.warehouse, color: Color(0xFF16324F)),
                         title: const Text('المخزن الافتراضي'),
                         subtitle: Text(_defaultWarehouse),
-                        trailing: const Icon(Icons.edit, color: Color(0xFF1A237E), size: 18),
+                        trailing: const Icon(Icons.edit, color: Color(0xFF16324F), size: 18),
                         onTap: () async {
                           final ctrl = TextEditingController(text: _defaultWarehouse);
                           final result = await showDialog<String>(
@@ -1116,7 +1144,7 @@ class _ImportScreenState extends State<ImportScreen> {
                                       ),
                                       Row(mainAxisSize: MainAxisSize.min, children: [
                                         IconButton(
-                                          icon: const Icon(Icons.edit, size: 18, color: Color(0xFF1A237E)),
+                                          icon: const Icon(Icons.edit, size: 18, color: Color(0xFF16324F)),
                                           padding: EdgeInsets.zero,
                                           constraints: const BoxConstraints(),
                                           onPressed: () => _editItem(i),
@@ -1155,7 +1183,7 @@ class _ImportScreenState extends State<ImportScreen> {
                           style: const TextStyle(fontSize: 16),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A237E),
+                          backgroundColor: const Color(0xFF16324F),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

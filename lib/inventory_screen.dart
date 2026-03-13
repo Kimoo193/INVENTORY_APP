@@ -5,6 +5,7 @@ import 'scanner_screen.dart';
 import 'delete_dialog.dart';
 import 'auth_service.dart';
 import 'app_localizations.dart';
+import 'inventory_repository.dart';
 
 // ============================================================
 // Filter Model
@@ -49,6 +50,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   List<InventoryItem> _filtered = [];
   final _searchController = TextEditingController();
   bool _loading = true;
+  bool _deleteDialogOpen = false;
   InventoryFilter _filter = const InventoryFilter();
   List<String> _warehouses = [];
 
@@ -67,12 +69,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  /// Called from parent when a new item is added — forces fresh reload
+  void refreshFromParent() {
+    _loadItems();
+  }
+
   Future<void> _loadItems() async {
-    setState(() => _loading = true);
+    if (mounted) setState(() => _loading = true);
+    // Small delay to let Hive writes complete before reading
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (!mounted) return;
+    final repo = InventoryRepository.instance;
     final items = widget.selectedDate != null
-        ? await FirestoreService.instance.getItemsByDate(widget.selectedDate!)
-        : await FirestoreService.instance.getAllItems();
-    final warehouses = await FirestoreService.instance.getWarehouses();
+        ? repo.getItemsByDate(widget.selectedDate!)
+        : repo.getAllItems();
+    final warehouses = repo.getWarehouses();
+    if (!mounted) return;
     setState(() {
       _items = items;
       _warehouses = warehouses;
@@ -140,12 +152,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
                 // Header
                 Row(children: [
-                  const Icon(Icons.tune_rounded, color: Color(0xFF1A237E), size: 22),
+                  const Icon(Icons.tune_rounded, color: Color(0xFF16324F), size: 22),
                   const SizedBox(width: 8),
                   Text(AppLocalizations.filterTitle,
                       style: const TextStyle(
                           fontSize: 18, fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A237E))),
+                          color: Color(0xFF16324F))),
                   const Spacer(),
                   if (tmp.isActive)
                     TextButton.icon(
@@ -224,7 +236,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     label: Text(AppLocalizations.applyFilter,
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1A237E),
+                      backgroundColor: const Color(0xFF16324F),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
@@ -256,10 +268,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
         margin: const EdgeInsets.only(left: 6),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF1A237E) : Colors.grey.shade100,
+          color: selected ? const Color(0xFF16324F) : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? const Color(0xFF1A237E) : Colors.grey.shade300),
+              color: selected ? const Color(0xFF16324F) : Colors.grey.shade300),
         ),
         child: Text(label, style: TextStyle(
             fontSize: 13,
@@ -306,18 +318,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF1A237E).withValues(alpha: 0.08) : Colors.grey.shade100,
+            color: isSelected ? const Color(0xFF16324F).withValues(alpha: 0.08) : Colors.grey.shade100,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-                color: isSelected ? const Color(0xFF1A237E) : Colors.transparent),
+                color: isSelected ? const Color(0xFF16324F) : Colors.transparent),
           ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 16,
-                color: isSelected ? const Color(0xFF1A237E) : Colors.grey),
+                color: isSelected ? const Color(0xFF16324F) : Colors.grey),
             const SizedBox(height: 3),
             Text(label, style: TextStyle(
                 fontSize: 11,
-                color: isSelected ? const Color(0xFF1A237E) : Colors.grey.shade600,
+                color: isSelected ? const Color(0xFF16324F) : Colors.grey.shade600,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
                 textAlign: TextAlign.center),
           ]),
@@ -327,31 +339,56 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   // ============================================================
-  // Delete with swipe
+  // Delete — single mechanism: swipe OR button, never both
+  // confirmDismiss shows dialog — only removes if confirmed
   // ============================================================
-  Future<void> _deleteItem(InventoryItem item) async {
+  Future<bool> _confirmDeleteSwipe(InventoryItem item) async {
+    if (_deleteDialogOpen) return false;
+    _deleteDialogOpen = true;
+    try {
     final u = widget.currentUser ?? await AuthService.instance.getCurrentUser();
-    if (!mounted) return;
     if (u == null || !u.canDelete) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.noPermissionDelete)));
-      return;
+      return false;
     }
+    if (!mounted) return false;
     final deleted = await showDeleteWithReasonDialog(context, item);
-    if (deleted) {
+    if (deleted && mounted) {
       _loadItems();
       widget.onRefresh?.call();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${AppLocalizations.isArabic ? "تم حذف" : "Deleted"} "${item.productName}"'),
-          backgroundColor: Colors.red.shade700,
-        ));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${AppLocalizations.isArabic ? "تم حذف" : "Deleted"} "${item.productName}"'),
+        backgroundColor: Colors.red.shade700,
+        action: SnackBarAction(
+          label: AppLocalizations.isArabic ? 'تراجع' : 'Undo',
+          textColor: Colors.white,
+          onPressed: () async {
+            // Restore from Hive deleted list
+            final deletedItems = InventoryRepository.instance.getDeletedItems();
+            final match = deletedItems.where((d) =>
+              (d['productName'] ?? d['product_name']) == item.productName).firstOrNull;
+            if (match != null) {
+              await InventoryRepository.instance.restoreItem(match);
+              _loadItems();
+              widget.onRefresh?.call();
+            }
+          },
+        ),
+      ));
+    }
+    return deleted;
+    } finally {
+      _deleteDialogOpen = false;
     }
   }
 
+  Future<void> _deleteItem(InventoryItem item) async {
+    await _confirmDeleteSwipe(item);
+  }
+
   Future<void> _moveItem(InventoryItem item) async {
-    final warehouses = await FirestoreService.instance.getWarehouses();
+    final warehouses = InventoryRepository.instance.getWarehouses();
     if (!mounted) return;
     final other = warehouses.where((w) => w != item.warehouseName).toList();
     if (other.isEmpty) {
@@ -371,7 +408,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
             const SizedBox(height: 12),
             ...other.map((w) => ListTile(
                 title: Text(w),
-                leading: const Icon(Icons.warehouse_rounded, color: Color(0xFF1A237E)),
+                leading: const Icon(Icons.warehouse_rounded, color: Color(0xFF16324F)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 onTap: () => Navigator.pop(ctx, w))),
           ]),
@@ -382,7 +419,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
     );
     if (selected != null && item.id != null) {
-      await FirestoreService.instance.updateItem(item.copyWith(warehouseName: selected));
+      await InventoryRepository.instance.updateItem(item.copyWith(warehouseName: selected));
       _loadItems();
       widget.onRefresh?.call();
       if (mounted) {
@@ -421,8 +458,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.all(7),
-          child: Icon(icon, size: 17, color: color),
+          padding: const EdgeInsets.all(12), // fixed: was 7px → 12px (≥48px touch target)
+          child: Icon(icon, size: 18, color: color),
         ),
       ),
     );
@@ -478,17 +515,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
             child: Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF16324F).withValues(alpha: 0.08),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
@@ -514,41 +551,43 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 : null,
                             filled: true,
                             fillColor: const Color(0xFFF6F4EE),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(14),
                               borderSide: BorderSide.none,
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(14),
                               borderSide: BorderSide.none,
                             ),
                             focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(14),
                               borderSide: const BorderSide(color: Color(0xFF16324F), width: 1.2),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       InkWell(
                         onTap: () {
                           HapticFeedback.selectionClick();
                           _showFilterSheet();
                         },
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(14),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: _filter.isActive ? const Color(0xFF16324F) : const Color(0xFFF6F4EE),
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 Icons.tune_rounded,
-                                size: 20,
+                                size: 18,
                                 color: _filter.isActive ? Colors.white : const Color(0xFF16324F),
                               ),
                               const SizedBox(width: 6),
@@ -557,7 +596,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 style: TextStyle(
                                   color: _filter.isActive ? Colors.white : const Color(0xFF16324F),
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                 ),
                               ),
                             ],
@@ -566,14 +605,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Text(
                         '${_filtered.length} ${AppLocalizations.pieces}',
                         style: TextStyle(
                           color: Colors.grey.shade700,
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -581,7 +620,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       if (_filter.sortBy != 'date')
                         Text(
                           '${AppLocalizations.sortBy}: ${_filter.sortBy == 'product' ? AppLocalizations.sortProduct : AppLocalizations.sortWarehouse}',
-                          style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 10.5),
                         ),
                     ],
                   ),
@@ -609,7 +648,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         onRefresh: _loadItems,
                         color: const Color(0xFF16324F),
                         child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 2, 12, 92),
+                          padding: const EdgeInsets.fromLTRB(12, 2, 12, 110),
                           itemCount: _filtered.length,
                           itemBuilder: (ctx, i) => _buildItemCard(_filtered[i], isAdmin),
                         ),
@@ -696,73 +735,72 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Widget _buildEmptyState() {
     final hasSearch = _searchController.text.isNotEmpty;
     final hasFilter = _filter.isActive;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF16324F).withValues(alpha: 0.08),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 110),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight - 20),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                // removed boxShadow — was making it look like a floating popup
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 78,
-                height: 78,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF16324F).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Icon(
-                  hasSearch ? Icons.search_off_rounded : Icons.inventory_2_outlined,
-                  size: 38,
-                  color: const Color(0xFF16324F),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                hasSearch
-                    ? (AppLocalizations.isArabic ? 'لا نتائج مطابقة' : 'No matching results')
-                    : hasFilter
-                        ? (AppLocalizations.isArabic ? 'لا يوجد عناصر بهذا الفلتر' : 'No items match this filter')
-                        : AppLocalizations.noItems,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                hasSearch || hasFilter
-                    ? (AppLocalizations.isArabic ? 'جرّب إزالة الفلاتر أو تعديل كلمات البحث.' : 'Try clearing filters or adjusting your search.')
-                    : (AppLocalizations.isArabic ? 'أضف أول قطعة أو اسحب القائمة للتحديث.' : 'Add your first item or pull to refresh.'),
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-              ),
-              if (hasSearch || hasFilter) ...[
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _filter = const InventoryFilter());
-                    _applyFilter();
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF16324F),
-                    foregroundColor: Colors.white,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16324F).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Icon(
+                      hasSearch ? Icons.search_off_rounded : Icons.inventory_2_outlined,
+                      size: 34,
+                      color: const Color(0xFF16324F),
+                    ),
                   ),
-                  icon: const Icon(Icons.clear_all_rounded),
-                  label: Text(AppLocalizations.isArabic ? 'مسح البحث والفلاتر' : 'Clear search and filters'),
-                ),
-              ],
-            ],
+                  const SizedBox(height: 14),
+                  Text(
+                    hasSearch
+                        ? (AppLocalizations.isArabic ? 'لا نتائج مطابقة' : 'No matching results')
+                        : hasFilter
+                            ? (AppLocalizations.isArabic ? 'لا يوجد عناصر بهذا الفلتر' : 'No items match this filter')
+                            : AppLocalizations.noItems,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    hasSearch || hasFilter
+                        ? (AppLocalizations.isArabic ? 'جرّب إزالة الفلاتر أو تعديل كلمات البحث.' : 'Try clearing filters or adjusting your search.')
+                        : (AppLocalizations.isArabic ? 'أضف أول قطعة أو اسحب القائمة للتحديث.' : 'Add your first item or pull to refresh.'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
+                  ),
+                  if (hasSearch || hasFilter) ...[
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _filter = const InventoryFilter());
+                        _applyFilter();
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF16324F),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.clear_all_rounded),
+                      label: Text(AppLocalizations.isArabic ? 'مسح البحث والفلاتر' : 'Clear search and filters'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -770,76 +808,63 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   // ── Item Card ──
+  // Dismissible removed — caused app freeze when dialog shown inside confirmDismiss.
+  // Delete is now triggered by long-press on the card (shows delete button row).
   Widget _buildItemCard(InventoryItem item, bool isAdmin) {
     final cc = _condColor(item.condition);
     final canEdit = widget.currentUser?.canEdit == true || isAdmin;
     final canDelete = widget.currentUser?.canDelete == true || isAdmin;
 
-    return Dismissible(
-      key: Key(item.id ?? item.serial ?? item.productName),
-      direction: canDelete ? DismissDirection.endToStart : DismissDirection.none,
-      confirmDismiss: (_) async {
-        HapticFeedback.mediumImpact();
-        return true;
-      },
-      onDismissed: (_) => _deleteItem(item),
-      background: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: Colors.red.shade700,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
-            const SizedBox(height: 4),
-            Text(
-              AppLocalizations.delete,
-              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-      ),
+    return _SwipeToDeleteCard(
+      key: ValueKey('item_${item.id ?? item.serial ?? item.productName}'),
+      canDelete: canDelete,
+      onDelete: () => _confirmDeleteSwipe(item),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
+        margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
               color: cc.withValues(alpha: 0.12),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
             ),
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6,
+              blurRadius: 4,
               offset: const Offset(0, 2),
             ),
           ],
         ),
         child: Material(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           child: InkWell(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(14),
             onTap: canEdit
                 ? () async {
-                    final result = await Navigator.push(
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => AddItemScreen(itemToEdit: item)),
                     );
-                    if (result == true) {
-                      _loadItems();
+                    // Always reload when returning — item may have been edited
+                    if (mounted) {
+                      await _loadItems();
                       widget.onRefresh?.call();
                     }
                   }
-                : null,
+                : () {
+                    // Fix: show feedback for read-only cards instead of silent null
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(AppLocalizations.isArabic
+                          ? 'ليس لديك صلاحية تعديل هذه القطعة'
+                          : 'You don\'t have permission to edit this item'),
+                      duration: const Duration(seconds: 2),
+                    ));
+                  },
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 children: [
                   Row(
@@ -856,7 +881,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -869,14 +894,21 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                     item.productName,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w800,
-                                      fontSize: 15,
+                                      fontSize: 14,
                                       height: 1.25,
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
+                                // Fix: lock icon for read-only items
+                                if (!canEdit)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 4, top: 2),
+                                    child: Icon(Icons.lock_outline_rounded,
+                                        size: 13, color: Colors.grey.shade400),
+                                  ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                                   decoration: BoxDecoration(
                                     color: cc.withValues(alpha: 0.10),
                                     borderRadius: BorderRadius.circular(999),
@@ -884,15 +916,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   child: Text(
                                     _localCond(item.condition),
                                     style: TextStyle(
-                                      color: cc,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 11,
-                                    ),
+                                        color: cc, fontWeight: FontWeight.w800, fontSize: 10.5),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 8),
                             _metaLine(Icons.warehouse_rounded, item.warehouseName),
                             if (item.serial != null && item.serial!.isNotEmpty) ...[
                               const SizedBox(height: 5),
@@ -900,22 +929,23 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             ],
                             if (item.expiryDate != null && item.expiryDate!.isNotEmpty) ...[
                               const SizedBox(height: 5),
-                              _metaLine(Icons.event_available_rounded, '${AppLocalizations.expiry} ${item.expiryDate}'),
+                              _metaLine(Icons.event_available_rounded,
+                                  '${AppLocalizations.expiry} ${item.expiryDate}'),
                             ],
                             if (item.notes != null && item.notes!.trim().isNotEmpty) ...[
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
                               Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF16324F).withValues(alpha: 0.05),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
                                   item.notes!,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
                                 ),
                               ),
                             ],
@@ -924,38 +954,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.calendar_today_rounded, size: 11, color: Colors.grey.shade400),
-                          const SizedBox(width: 4),
-                          Text(
-                            item.inventoryDate,
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.calendar_today_rounded, size: 11, color: Colors.grey.shade400),
+                        const SizedBox(width: 4),
+                        Text(item.inventoryDate,
                             style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade500,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
+                                fontSize: 11,
+                                color: Colors.grey.shade500,
+                                fontWeight: FontWeight.w600)),
+                      ]),
                       const Spacer(),
-                      if (isAdmin) ...[
+                      // Fix: delete button removed — swipe-only to avoid double action
+                      // Move button stays for admins
+                      if (isAdmin)
                         _actionBtn(
                           icon: Icons.drive_file_move_outline,
-                          color: const Color(0xFF1565C0),
+                          color: const Color(0xFF16324F),
                           onTap: () { HapticFeedback.selectionClick(); _moveItem(item); },
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-                      if (canDelete)
-                        _actionBtn(
-                          icon: Icons.delete_outline_rounded,
-                          color: Colors.red.shade600,
-                          onTap: () { HapticFeedback.selectionClick(); _deleteItem(item); },
                         ),
                     ],
                   ),
@@ -964,6 +982,120 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Custom swipe-to-reveal-delete widget ──────────────────────────────────────
+// Replaces Dismissible — no confirmDismiss deadlock, no full-screen red bg.
+class _SwipeToDeleteCard extends StatefulWidget {
+  final Widget child;
+  final bool canDelete;
+  final VoidCallback onDelete;
+
+  const _SwipeToDeleteCard({
+    super.key,
+    required this.child,
+    required this.canDelete,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SwipeToDeleteCard> createState() => _SwipeToDeleteCardState();
+}
+
+class _SwipeToDeleteCardState extends State<_SwipeToDeleteCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<Offset> _slide;
+  bool _revealed = false;
+
+  static const _revealWidth = 80.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 200));
+    _slide = Tween<Offset>(begin: Offset.zero, end: const Offset(-_revealWidth, 0))
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (!widget.canDelete) return;
+    setState(() => _revealed = !_revealed);
+    _revealed ? _ctrl.forward() : _ctrl.reverse();
+  }
+
+  void _close() {
+    if (_revealed) {
+      setState(() => _revealed = false);
+      _ctrl.reverse();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.canDelete) return widget.child;
+
+    return GestureDetector(
+      onHorizontalDragUpdate: (d) {
+        if (!widget.canDelete) return;
+        // سحب يسار يكشف زرار الحذف
+        if (d.delta.dx < -4 && !_revealed) _toggle();
+        // سحب يمين يخفيه
+        if (d.delta.dx > 4 && _revealed) _toggle();
+      },
+      onTap: _close,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          // Delete button behind the card
+          Positioned(
+            top: 0, bottom: 8, right: 0,
+            width: _revealWidth,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.horizontal(right: Radius.circular(14)),
+              child: GestureDetector(
+                onTap: () {
+                  _close();
+                  widget.onDelete();
+                },
+                child: Container(
+                  color: Colors.red.shade700,
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.delete_outline_rounded, color: Colors.white, size: 24),
+                      SizedBox(height: 3),
+                      Text('حذف',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // The card itself slides left
+          AnimatedBuilder(
+            animation: _slide,
+            builder: (_, child) => Transform.translate(
+              offset: _slide.value,
+              child: child,
+            ),
+            child: widget.child,
+          ),
+        ],
       ),
     );
   }

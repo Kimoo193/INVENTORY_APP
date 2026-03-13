@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'firestore_service.dart';
 import 'auth_service.dart';
+import 'app_localizations.dart';
 import 'log_service.dart';
 
 class ManageScreen extends StatefulWidget {
   const ManageScreen({super.key});
-
   @override
   State<ManageScreen> createState() => _ManageScreenState();
 }
@@ -14,13 +15,17 @@ class _ManageScreenState extends State<ManageScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<String> _warehouses = [];
-  List<String> _products = [];
+  List<String> _products   = [];
   bool _loading = true;
+
+  static const Color _primary = Color(0xFF16324F);
+  static const Color _gold    = Color(0xFFC69749);
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() => setState(() {}));
     _loadData();
   }
 
@@ -30,45 +35,66 @@ class _ManageScreenState extends State<ManageScreen>
     super.dispose();
   }
 
+  // ──────────────────── Data ────────────────────────────────
   Future<void> _loadData() async {
     final currentUser = await AuthService.instance.getCurrentUser();
     if (currentUser == null || !currentUser.canManage) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ليس لديك صلاحية إدارة القوائم')),
-        );
+        _showSnack(AppLocalizations.noPermissionManage, Colors.red);
         Navigator.pop(context);
       }
       return;
     }
     setState(() => _loading = true);
-    final warehouses = await FirestoreService.instance.getWarehouses();
-    final products = await FirestoreService.instance.getProducts();
-    setState(() {
-      _warehouses = warehouses;
-      _products = products;
-      _loading = false;
-    });
+    final wh = await FirestoreService.instance.getWarehouses();
+    final pr = await FirestoreService.instance.getProducts();
+    if (!mounted) return;
+    setState(() { _warehouses = wh; _products = pr; _loading = false; });
+  }
+
+  void _showSnack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      ),
+    );
+  }
+
+  // ──────────────────── Warehouse CRUD ──────────────────────
+  Future<void> _addWarehouse() async {
+    final result = await _showInputDialog(
+      title: AppLocalizations.addWarehouse,
+      hint:  AppLocalizations.warehouseNameHint,
+      icon:  Icons.warehouse_rounded,
+    );
+    if (result != null && result.isNotEmpty) {
+      await FirestoreService.instance.addWarehouse(result);
+      _showSnack(AppLocalizations.warehouseAddedSuccess, Colors.green);
+      await _loadData();
+    }
+  }
+
+  Future<void> _editWarehouse(String old) async {
+    final result = await _showInputDialog(
+      title:  AppLocalizations.editWarehouse,
+      hint:   AppLocalizations.warehouseNameHint,
+      icon:   Icons.edit_rounded,
+      initial: old,
+    );
+    if (result != null && result.isNotEmpty && result != old) {
+      await FirestoreService.instance.updateWarehouse(old, result);
+      await _loadData();
+    }
   }
 
   Future<void> _deleteWarehouse(String name) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('حذف المخزن'),
-        content: Text('هتحذف "$name"؟'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
+    final confirm = await _showDeleteDialog(
+      title: AppLocalizations.deleteWarehouseTitle,
+      itemName: name,
     );
     if (confirm == true) {
       await FirestoreService.instance.deleteWarehouse(name);
@@ -81,24 +107,37 @@ class _ManageScreenState extends State<ManageScreen>
     }
   }
 
+  // ──────────────────── Product CRUD ────────────────────────
+  Future<void> _addProduct() async {
+    final result = await _showInputDialog(
+      title: AppLocalizations.addProduct,
+      hint:  AppLocalizations.productNameHint,
+      icon:  Icons.inventory_2_rounded,
+    );
+    if (result != null && result.isNotEmpty) {
+      await FirestoreService.instance.addProduct(result);
+      _showSnack(AppLocalizations.productAddedSuccess, Colors.green);
+      await _loadData();
+    }
+  }
+
+  Future<void> _editProduct(String old) async {
+    final result = await _showInputDialog(
+      title:   AppLocalizations.editProduct,
+      hint:    AppLocalizations.productNameHint,
+      icon:    Icons.edit_rounded,
+      initial: old,
+    );
+    if (result != null && result.isNotEmpty && result != old) {
+      await FirestoreService.instance.updateProduct(old, result);
+      await _loadData();
+    }
+  }
+
   Future<void> _deleteProduct(String name) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('حذف المنتج'),
-        content: Text('هتحذف "$name"؟'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
+    final confirm = await _showDeleteDialog(
+      title: AppLocalizations.deleteProductTitle,
+      itemName: name,
     );
     if (confirm == true) {
       await FirestoreService.instance.deleteProduct(name);
@@ -111,130 +150,191 @@ class _ManageScreenState extends State<ManageScreen>
     }
   }
 
-  Future<void> _editWarehouse(String oldName) async {
-    final controller = TextEditingController(text: oldName);
-    final result = await showDialog<String>(
+  // ──────────────────── Dialogs ─────────────────────────────
+  Future<String?> _showInputDialog({
+    required String title,
+    required String hint,
+    required IconData icon,
+    String? initial,
+  }) async {
+    final ctrl = TextEditingController(text: initial ?? '');
+    return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('تعديل المخزن'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'اسم المخزن'),
-          textDirection: TextDirection.rtl,
-        ),
-        actions: [
-          TextButton(
+      builder: (ctx) => Directionality(
+        textDirection: AppLocalizations.isArabic ? TextDirection.rtl : TextDirection.ltr,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          title: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: _primary, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 16, bottom: 8),
+            child: TextField(
+              controller: ctrl,
+              autofocus: true,
+              textDirection: TextDirection.rtl,
+              decoration: InputDecoration(
+                hintText: hint,
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _primary, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              onSubmitted: (val) => Navigator.pop(ctx, val.trim()),
+            ),
+          ),
+          actions: [
+            TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('حفظ')),
-        ],
+              child: Text(AppLocalizations.cancel,
+                  style: TextStyle(color: Colors.grey.shade600)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: Text(
+                initial != null ? AppLocalizations.save : AppLocalizations.add,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
       ),
     );
-    if (result != null && result.isNotEmpty && result != oldName) {
-      await FirestoreService.instance.updateWarehouse(oldName, result);
-      await _loadData();
-    }
   }
 
-  Future<void> _editProduct(String oldName) async {
-    final controller = TextEditingController(text: oldName);
-    final result = await showDialog<String>(
+  Future<bool?> _showDeleteDialog({required String title, required String itemName}) {
+    return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('تعديل المنتج'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'اسم المنتج'),
-          textDirection: TextDirection.rtl,
+      builder: (ctx) => Directionality(
+        textDirection: AppLocalizations.isArabic ? TextDirection.rtl : TextDirection.ltr,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.delete_outline_rounded, color: Colors.red.shade600, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+          ]),
+          content: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade100),
+            ),
+            child: Text(
+              '"$itemName"',
+              style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: Colors.red.shade700),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(AppLocalizations.cancel,
+                  style: TextStyle(color: Colors.grey.shade600)),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.delete_rounded, size: 18),
+              label: Text(AppLocalizations.delete,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('حفظ')),
-        ],
       ),
     );
-    if (result != null && result.isNotEmpty && result != oldName) {
-      await FirestoreService.instance.updateProduct(oldName, result);
-      await _loadData();
-    }
   }
 
-  Future<void> _addWarehouse() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة مخزن جديد'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'اسم المخزن'),
-          textDirection: TextDirection.rtl,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('إضافة')),
-        ],
-      ),
-    );
-    if (result != null && result.isNotEmpty) {
-      await FirestoreService.instance.addWarehouse(result);
-      await _loadData();
-    }
-  }
-
-  Future<void> _addProduct() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة منتج جديد'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'اسم المنتج'),
-          textDirection: TextDirection.rtl,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('إضافة')),
-        ],
-      ),
-    );
-    if (result != null && result.isNotEmpty) {
-      await FirestoreService.instance.addProduct(result);
-      await _loadData();
-    }
-  }
-
+  // ──────────────────── List Widget ─────────────────────────
   Widget _buildList(List<String> items, bool isWarehouse) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: _primary, strokeWidth: 2.5),
+            const SizedBox(height: 12),
+            Text(AppLocalizations.loading,
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 14)),
+          ],
+        ),
+      );
+    }
+
     if (items.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isWarehouse ? Icons.warehouse_outlined : Icons.inventory_2_outlined,
-              size: 56,
-              color: Colors.grey.shade300,
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.06),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isWarehouse ? Icons.warehouse_rounded : Icons.inventory_2_rounded,
+                size: 36,
+                color: _primary.withValues(alpha: 0.3),
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
-              isWarehouse ? 'لا توجد مخازن' : 'لا توجد منتجات',
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
+              isWarehouse ? AppLocalizations.noWarehouses : AppLocalizations.noProducts,
+              style: TextStyle(
+                  color: Colors.grey.shade500,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              isWarehouse
+                  ? (AppLocalizations.isArabic ? 'اضغط + لإضافة مخزن جديد' : 'Tap + to add a warehouse')
+                  : (AppLocalizations.isArabic ? 'اضغط + لإضافة منتج جديد' : 'Tap + to add a product'),
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
             ),
           ],
         ),
@@ -242,45 +342,65 @@ class _ManageScreenState extends State<ManageScreen>
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
       itemCount: items.length,
       itemBuilder: (_, i) {
         final item = items[i];
-        return Card(
+        return Container(
           margin: const EdgeInsets.only(bottom: 8),
-          elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: _primary.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
           child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: const Color(0xFF1A237E).withValues(alpha: 0.1),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [_primary.withValues(alpha: 0.12), _primary.withValues(alpha: 0.06)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
               child: Icon(
-                isWarehouse ? Icons.warehouse : Icons.inventory_2,
-                color: const Color(0xFF1A237E),
+                isWarehouse ? Icons.warehouse_rounded : Icons.inventory_2_rounded,
+                color: _primary,
                 size: 20,
               ),
             ),
             title: Text(
               item,
               textDirection: TextDirection.rtl,
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A2E)),
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Color(0xFF1A237E), size: 20),
-                  onPressed: () => isWarehouse
-                      ? _editWarehouse(item)
-                      : _editProduct(item),
-                  tooltip: 'تعديل',
+                _actionBtn(
+                  icon: Icons.edit_rounded,
+                  color: _primary,
+                  onTap: () => isWarehouse ? _editWarehouse(item) : _editProduct(item),
+                  tooltip: AppLocalizations.edit,
                 ),
-                IconButton(
-                  icon: Icon(Icons.delete_outline,
-                      color: Colors.red.shade400, size: 20),
-                  onPressed: () => isWarehouse
-                      ? _deleteWarehouse(item)
-                      : _deleteProduct(item),
-                  tooltip: 'حذف',
+                const SizedBox(width: 4),
+                _actionBtn(
+                  icon: Icons.delete_outline_rounded,
+                  color: Colors.red.shade400,
+                  onTap: () => isWarehouse ? _deleteWarehouse(item) : _deleteProduct(item),
+                  tooltip: AppLocalizations.delete,
                 ),
               ],
             ),
@@ -290,30 +410,91 @@ class _ManageScreenState extends State<ManageScreen>
     );
   }
 
+  Widget _actionBtn({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    required String tooltip,
+  }) {
+    return Material(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 18, color: color),
+        ),
+      ),
+    );
+  }
+
+  // ──────────────────── Build ───────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final isWarehouses = _tabController.index == 0;
+
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocalizations.isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F7),
         appBar: AppBar(
-          title: const Text('إدارة القوائم'),
-          backgroundColor: const Color(0xFF1A237E),
+          backgroundColor: _primary,
           foregroundColor: Colors.white,
-          bottom: TabBar(
-            controller: _tabController,
-            indicatorColor: Colors.white,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white60,
-            tabs: [
-              Tab(
-                icon: const Icon(Icons.warehouse),
-                text: 'المخازن (${_warehouses.length})',
+          elevation: 0,
+          title: Text(
+            AppLocalizations.manageListsTitle,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(52),
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
               ),
-              Tab(
-                icon: const Icon(Icons.inventory_2),
-                text: 'المنتجات (${_products.length})',
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                labelColor: _primary,
+                unselectedLabelColor: Colors.white70,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                unselectedLabelStyle: const TextStyle(fontSize: 13),
+                indicatorSize: TabBarIndicatorSize.tab,
+                padding: const EdgeInsets.all(3),
+                dividerColor: Colors.transparent,
+                tabs: [
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.warehouse_rounded, size: 16),
+                        const SizedBox(width: 6),
+                        Text('${AppLocalizations.warehouses} (${_warehouses.length})'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.inventory_2_rounded, size: 16),
+                        const SizedBox(width: 6),
+                        Text('${AppLocalizations.products} (${_products.length})'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         body: TabBarView(
@@ -325,18 +506,18 @@ class _ManageScreenState extends State<ManageScreen>
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () {
-            if (_tabController.index == 0) {
-              _addWarehouse();
-            } else {
-              _addProduct();
-            }
+            HapticFeedback.mediumImpact();
+            isWarehouses ? _addWarehouse() : _addProduct();
           },
-          backgroundColor: const Color(0xFF1A237E),
+          backgroundColor: _gold,
           foregroundColor: Colors.white,
-          icon: const Icon(Icons.add),
+          elevation: 4,
+          icon: const Icon(Icons.add_rounded, size: 22),
           label: Text(
-            _tabController.index == 0 ? 'إضافة مخزن' : 'إضافة منتج',
+            isWarehouses ? AppLocalizations.addWarehouse : AppLocalizations.addProduct,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
           ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
     );

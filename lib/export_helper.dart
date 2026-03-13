@@ -18,6 +18,21 @@ class ExportHelper {
     return date;
   }
 
+  static List<InventoryItem> _sortByProductName(List<InventoryItem> items) {
+    final sorted = List<InventoryItem>.from(items);
+    sorted.sort((a, b) {
+      final byName = a.productName.compareTo(b.productName);
+      if (byName != 0) return byName;
+
+      // Keep ordering predictable when names are equal.
+      final byWarehouse = a.warehouseName.compareTo(b.warehouseName);
+      if (byWarehouse != 0) return byWarehouse;
+
+      return (a.serial ?? '').compareTo(b.serial ?? '');
+    });
+    return sorted;
+  }
+
   static Future<void> exportToExcel(List<InventoryItem> items, String? date) async {
     final currentUser = await AuthService.instance.getCurrentUser();
     if (currentUser == null || !currentUser.canExport) {
@@ -41,8 +56,9 @@ class ExportHelper {
         cell.cellStyle = headerStyle;
       }
 
-      for (int i = 0; i < sheetItems.length; i++) {
-        final item = sheetItems[i];
+      final sortedSheetItems = _sortByProductName(sheetItems);
+      for (int i = 0; i < sortedSheetItems.length; i++) {
+        final item = sortedSheetItems[i];
         final rowData = [
           (i + 1).toString(),
           item.productName,
@@ -106,8 +122,9 @@ class ExportHelper {
         cell.cellStyle = headerStyle;
       }
 
+      final sortedAllItems = _sortByProductName(items);
       int summaryRow = 1;
-      for (final item in items) {
+      for (final item in sortedAllItems) {
         final rowData = [
           summaryRow.toString(),
           item.productName,

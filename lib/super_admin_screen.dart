@@ -78,10 +78,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1A237E).withValues(alpha: 0.1),
+                        color: const Color(0xFF16324F).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.admin_panel_settings, color: Color(0xFF1A237E)),
+                      child: const Icon(Icons.admin_panel_settings, color: Color(0xFF16324F)),
                     ),
                     const SizedBox(width: 12),
                     const Text('إنشاء Admin جديد',
@@ -140,7 +140,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                       child: ElevatedButton(
                         onPressed: () => Navigator.pop(ctx, true),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A237E),
+                          backgroundColor: const Color(0xFF16324F),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -228,7 +228,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 children: [
                   Row(children: [
                     CircleAvatar(
-                      backgroundColor: const Color(0xFF1A237E).withValues(alpha: 0.1),
+                      backgroundColor: const Color(0xFF16324F).withValues(alpha: 0.1),
                       child: Text(user.isAdmin ? '🔑' : '👤',
                           style: const TextStyle(fontSize: 18)),
                     ),
@@ -328,7 +328,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                       child: ElevatedButton(
                         onPressed: () => Navigator.pop(ctx, true),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A237E),
+                          backgroundColor: const Color(0xFF16324F),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -539,7 +539,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             ElevatedButton(
               onPressed: selectedAdmin == null ? null : () => Navigator.pop(ctx, selectedAdmin),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A237E), foregroundColor: Colors.white),
+                  backgroundColor: const Color(0xFF16324F), foregroundColor: Colors.white),
               child: const Text('ربط'),
             ),
           ],
@@ -571,7 +571,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: active ? const Color(0xFF1A237E) : Colors.grey.shade200,
+          color: active ? const Color(0xFF16324F) : Colors.grey.shade200,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(label, style: TextStyle(
@@ -602,7 +602,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   style: TextStyle(fontSize: 11, color: Colors.white70)),
             ],
           ),
-          backgroundColor: const Color(0xFF1A237E),
+          backgroundColor: const Color(0xFF16324F),
           foregroundColor: Colors.white,
           actions: [
             IconButton(
@@ -632,7 +632,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           ),
         ),
         body: _loading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFF1A237E)))
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF16324F)))
             : TabBarView(
                 controller: _tabController,
                 children: [
@@ -655,7 +655,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _showCreateAdminDialog,
-          backgroundColor: const Color(0xFF1A237E),
+          backgroundColor: const Color(0xFF16324F),
           foregroundColor: Colors.white,
           icon: const Icon(Icons.admin_panel_settings),
           label: const Text('Admin جديد', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -789,7 +789,7 @@ class _AdminCardState extends State<_AdminCard> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: widget.admin.isActive
-                  ? const Color(0xFF1A237E).withValues(alpha: 0.05)
+                  ? const Color(0xFF16324F).withValues(alpha: 0.05)
                   : Colors.red.shade50,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
@@ -797,7 +797,7 @@ class _AdminCardState extends State<_AdminCard> {
               CircleAvatar(
                 radius: 22,
                 backgroundColor: widget.admin.isActive
-                    ? const Color(0xFF1A237E).withValues(alpha: 0.15)
+                    ? const Color(0xFF16324F).withValues(alpha: 0.15)
                     : Colors.red.shade100,
                 child: const Text('🔑', style: TextStyle(fontSize: 20)),
               ),
@@ -830,7 +830,7 @@ class _AdminCardState extends State<_AdminCard> {
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'inventory',
                       child: Row(children: [
-                        Icon(Icons.inventory_2, size: 18, color: Color(0xFF1A237E)),
+                        Icon(Icons.inventory_2, size: 18, color: Color(0xFF16324F)),
                         SizedBox(width: 8), Text('مشاهدة المخزون')])),
                   const PopupMenuItem(value: 'edit',
                       child: Row(children: [
@@ -862,7 +862,7 @@ class _AdminCardState extends State<_AdminCard> {
                   icon: const Icon(Icons.visibility, size: 16),
                   label: const Text('المخزون', style: TextStyle(fontSize: 12)),
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF1A237E),
+                    foregroundColor: const Color(0xFF16324F),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   ),
                 ),
@@ -1087,21 +1087,64 @@ class _StatsTabState extends State<_StatsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF16324F)));
+
+    final totalDeleted = _adminStats.values.fold(0, (sum, s) => sum + (s['deleted'] ?? 0));
+    final totalWarehouses = _adminStats.values.fold(0, (sum, s) => sum + (s['warehouses'] ?? 0));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- Overall Stats ----
+          // Fix: enhanced summary row — 4 stats instead of 3
           Row(children: [
-            Expanded(child: _bigStat('الإجمالي', '$_totalItems', 'قطعة', Icons.inventory_2, Colors.blue)),
-            const SizedBox(width: 12),
-            Expanded(child: _bigStat('المستخدمون', '$_totalUsers', 'مستخدم', Icons.people, Colors.green)),
-            const SizedBox(width: 12),
-            Expanded(child: _bigStat('Admins', '${widget.admins.length}', 'مدير', Icons.admin_panel_settings, Colors.orange)),
+            Expanded(child: _bigStat('المخزون', '$_totalItems', 'قطعة', Icons.inventory_2_rounded, Colors.blue)),
+            const SizedBox(width: 10),
+            Expanded(child: _bigStat('المستخدمون', '$_totalUsers', 'مستخدم', Icons.people_rounded, Colors.green)),
+            const SizedBox(width: 10),
+            Expanded(child: _bigStat('Admins', '${widget.admins.length}', 'مدير', Icons.admin_panel_settings_rounded, Colors.orange)),
+            const SizedBox(width: 10),
+            Expanded(child: _bigStat('المحذوف', '$totalDeleted', 'قطعة', Icons.delete_outline_rounded, Colors.red)),
           ]),
+          const SizedBox(height: 8),
+          // Fix: system health bar
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.health_and_safety_rounded, size: 16, color: Color(0xFF16324F)),
+                const SizedBox(width: 6),
+                const Text('صحة النظام', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                const Spacer(),
+                Text('$totalWarehouses مخزن', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                  flex: _totalItems,
+                  child: Container(height: 8, decoration: BoxDecoration(color: Colors.blue, borderRadius: const BorderRadius.horizontal(left: Radius.circular(4)))),
+                ),
+                if (totalDeleted > 0) Expanded(
+                  flex: totalDeleted,
+                  child: Container(height: 8, color: Colors.red.shade300),
+                ),
+                if (_totalItems == 0 && totalDeleted == 0)
+                  Expanded(flex: 1, child: Container(height: 8, color: Colors.grey.shade200, decoration: BoxDecoration(borderRadius: BorderRadius.circular(4)))),
+              ]),
+              const SizedBox(height: 6),
+              Row(children: [
+                _dot(Colors.blue, 'نشط: $_totalItems'),
+                const SizedBox(width: 12),
+                _dot(Colors.red.shade300, 'محذوف: $totalDeleted'),
+              ]),
+            ]),
+          ),
           const SizedBox(height: 20),
 
           // ---- Per Admin Stats ----
@@ -1110,48 +1153,76 @@ class _StatsTabState extends State<_StatsTab> {
           const SizedBox(height: 12),
           ...widget.admins.map((admin) {
             final s = _adminStats[admin.uid];
-            return Card(
+            final items = s?['items'] ?? 0;
+            final deleted = s?['deleted'] ?? 0;
+            final warehouses = s?['warehouses'] ?? 0;
+            final total = items + deleted;
+            final healthPct = total > 0 ? items / total : 1.0;
+
+            return Container(
               margin: const EdgeInsets.only(bottom: 10),
-              elevation: 1.5,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Text('🔑', style: TextStyle(fontSize: 18)),
-                      const SizedBox(width: 8),
-                      Text(admin.name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14)),
-                      const Spacer(),
+                      Container(
+                        width: 36, height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF16324F).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Center(child: Text('🔑', style: TextStyle(fontSize: 18))),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(admin.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(admin.email, style: TextStyle(fontSize: 11, color: Colors.grey.shade500), overflow: TextOverflow.ellipsis),
+                      ])),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: admin.isActive
-                              ? Colors.green.withValues(alpha: 0.1)
-                              : Colors.red.withValues(alpha: 0.1),
+                          color: admin.isActive ? Colors.green : Colors.red,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(admin.isActive ? 'مفعّل' : 'موقوف',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: admin.isActive ? Colors.green : Colors.red,
-                                fontWeight: FontWeight.w600)),
+                            style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
                       ),
                     ]),
                     const SizedBox(height: 12),
-                    if (s != null)
+                    if (s != null) ...[
                       Row(children: [
-                        _miniStat('${s['items']}', 'قطعة', Colors.blue),
+                        Expanded(child: _miniStat('$items', 'قطعة', Colors.blue)),
                         const SizedBox(width: 8),
-                        _miniStat('${s['warehouses']}', 'مخزن', Colors.orange),
+                        Expanded(child: _miniStat('$warehouses', 'مخزن', Colors.orange)),
                         const SizedBox(width: 8),
-                        _miniStat('${s['deleted']}', 'محذوف', Colors.red),
-                      ])
-                    else
-                      const LinearProgressIndicator(),
+                        Expanded(child: _miniStat('$deleted', 'محذوف', Colors.red)),
+                      ]),
+                      if (total > 0) ...[
+                        const SizedBox(height: 10),
+                        Row(children: [
+                          Expanded(child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: healthPct,
+                              minHeight: 5,
+                              backgroundColor: Colors.red.shade100,
+                              valueColor: const AlwaysStoppedAnimation(Colors.green),
+                            ),
+                          )),
+                          const SizedBox(width: 8),
+                          Text('${(healthPct * 100).round()}%',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+                        ]),
+                      ],
+                    ] else
+                      const LinearProgressIndicator(color: Color(0xFF16324F)),
                   ],
                 ),
               ),
@@ -1162,34 +1233,43 @@ class _StatsTabState extends State<_StatsTab> {
     );
   }
 
+  Widget _dot(Color color, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+    const SizedBox(width: 4),
+    Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+  ]);
+
   Widget _bigStat(String title, String value, String sub, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.10), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(children: [
-        Icon(icon, color: color, size: 28),
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+          child: Icon(icon, color: color, size: 18),
+        ),
         const SizedBox(height: 6),
-        Text(value, style: TextStyle(
-            fontSize: 22, fontWeight: FontWeight.bold, color: color)),
-        Text(sub, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+        Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+        Text(sub, style: TextStyle(fontSize: 9, color: Colors.grey.shade500)),
         const SizedBox(height: 2),
-        Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+        Text(title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
       ]),
     );
   }
 
   Widget _miniStat(String value, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-      child: Text('$value $label',
-          style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.09), borderRadius: BorderRadius.circular(8)),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 16)),
+        Text(label, style: TextStyle(color: color.withValues(alpha: 0.7), fontSize: 10)),
+      ]),
     );
   }
 }
@@ -1287,7 +1367,7 @@ class _AdminInventoryViewState extends State<_AdminInventoryView> {
             Text('${_filtered.length} قطعة',
                 style: const TextStyle(fontSize: 11, color: Colors.white70)),
           ]),
-          backgroundColor: const Color(0xFF1A237E),
+          backgroundColor: const Color(0xFF16324F),
           foregroundColor: Colors.white,
         ),
         body: Column(children: [
@@ -1401,10 +1481,10 @@ class _AdminInventoryViewState extends State<_AdminInventoryView> {
         margin: const EdgeInsets.only(left: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF1A237E) : Colors.white,
+          color: selected ? const Color(0xFF16324F) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? const Color(0xFF1A237E) : Colors.grey.shade300),
+              color: selected ? const Color(0xFF16324F) : Colors.grey.shade300),
         ),
         child: Text(label,
             style: TextStyle(
@@ -1435,6 +1515,8 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
   String _typeFilter = 'all';
   final _searchCtrl  = TextEditingController();
   String _searchQ    = '';
+  // Fix: date range filter
+  DateTimeRange? _dateRange;
 
   @override
   void initState() {
@@ -1536,6 +1618,44 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
     }
   }
 
+  // Fix: date range picker
+  Future<void> _openDateRangePicker() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2024),
+      lastDate: now,
+      initialDateRange: _dateRange ?? DateTimeRange(
+        start: now.subtract(const Duration(days: 7)),
+        end: now,
+      ),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: Color(0xFF16324F),
+            onPrimary: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      setState(() => _dateRange = picked);
+    }
+  }
+
+  // Filtered dates by range
+  List<Map<String, dynamic>> get _visibleDates {
+    if (_dateRange == null) return _dates;
+    return _dates.where((d) {
+      try {
+        final parts = (d['date'] as String).split('-');
+        final dt = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+        return !dt.isBefore(_dateRange!.start) && !dt.isAfter(_dateRange!.end);
+      } catch (_) { return true; }
+    }).toList();
+  }
+
   List<Map<String, dynamic>> get _filtered {
     var r = _logs;
     if (_typeFilter != 'all') {
@@ -1605,24 +1725,66 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
               ),
             ],
           ),
-          backgroundColor: const Color(0xFF1A237E),
+          backgroundColor: const Color(0xFF16324F),
           foregroundColor: Colors.white,
           actions: [
+            // Fix: date range filter
+            Stack(
+              alignment: Alignment.topLeft,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.date_range_rounded),
+                  tooltip: 'فلتر التاريخ',
+                  onPressed: _openDateRangePicker,
+                ),
+                if (_dateRange != null)
+                  Positioned(
+                    top: 8, right: 8,
+                    child: Container(
+                      width: 8, height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.orangeAccent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (_dateRange != null)
+              IconButton(
+                icon: const Icon(Icons.filter_alt_off_rounded),
+                tooltip: 'إزالة فلتر التاريخ',
+                onPressed: () => setState(() => _dateRange = null),
+              ),
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'تحديث',
-              onPressed: () {
-                _loadDates();
-              },
+              onPressed: _loadDates,
             ),
           ],
         ),
         body: _loadingDates
             ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF1A237E)))
+                child: CircularProgressIndicator(color: Color(0xFF16324F)))
             : _dates.isEmpty
                 ? _buildEmpty()
                 : Column(children: [
+                    // Fix: date range active banner
+                    if (_dateRange != null)
+                      Container(
+                        color: const Color(0xFF16324F).withValues(alpha: 0.08),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        child: Row(children: [
+                          const Icon(Icons.date_range_rounded, size: 14, color: Color(0xFF16324F)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'الفترة: ${_dateRange!.start.day}/${_dateRange!.start.month} → ${_dateRange!.end.day}/${_dateRange!.end.month}',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF16324F), fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          Text('${_visibleDates.length} يوم', style: const TextStyle(fontSize: 11, color: Color(0xFF16324F))),
+                        ]),
+                      ),
                     // ---- شريط اختيار اليوم ----
                     _buildDateBar(),
 
@@ -1661,7 +1823,7 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
                       child: _loadingLogs
                           ? const Center(
                               child: CircularProgressIndicator(
-                                  color: Color(0xFF1A237E)))
+                                  color: Color(0xFF16324F)))
                           : _filtered.isEmpty
                               ? Center(
                                   child: Column(
@@ -1695,15 +1857,16 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
   }
 
   Widget _buildDateBar() {
+    final dates = _visibleDates; // Fix: respect date range filter
     return Container(
       color: Colors.white,
       height: 50,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        itemCount: _dates.length,
+        itemCount: dates.length,
         itemBuilder: (_, i) {
-          final d = _dates[i];
+          final d = dates[i];
           final dateKey = d['date'] as String;
           final count   = d['count'] as int;
           final selected = dateKey == _selectedDate;
@@ -1712,16 +1875,15 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               margin: const EdgeInsets.only(left: 8),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
               decoration: BoxDecoration(
                 color: selected
-                    ? const Color(0xFF1A237E)
+                    ? const Color(0xFF16324F)
                     : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                     color: selected
-                        ? const Color(0xFF1A237E)
+                        ? const Color(0xFF16324F)
                         : Colors.transparent),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1741,7 +1903,7 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
                     decoration: BoxDecoration(
                       color: selected
                           ? Colors.white.withValues(alpha: 0.3)
-                          : const Color(0xFF1A237E).withValues(alpha: 0.15),
+                          : const Color(0xFF16324F).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -1751,7 +1913,7 @@ class _ActivityLogsViewState extends State<_ActivityLogsView> {
                         fontWeight: FontWeight.bold,
                         color: selected
                             ? Colors.white
-                            : const Color(0xFF1A237E),
+                            : const Color(0xFF16324F),
                       ),
                     ),
                   ),
@@ -1853,7 +2015,7 @@ class _LogCard extends StatelessWidget {
       case LogType.userCreated:
         icon = Icons.person_add_outlined; color = Colors.purple; break;
       case LogType.adminCreated:
-        icon = Icons.admin_panel_settings_outlined; color = const Color(0xFF1A237E); break;
+        icon = Icons.admin_panel_settings_outlined; color = const Color(0xFF16324F); break;
       case LogType.userActivated:
         icon = Icons.check_circle_outline; color = Colors.green; break;
       case LogType.userDeactivated:
@@ -1894,72 +2056,97 @@ class _LogCard extends StatelessWidget {
 
     final isPermanentDeleted = type == LogType.itemPermanentDeleted;
 
-    return Card(
+    // Fix: color-coded card with left border accent for at-a-glance scanning
+    return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      elevation: isPermanentDeleted ? 2 : 1.5,
-      shape: RoundedRectangleBorder(
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        side: isPermanentDeleted
-            ? BorderSide(color: Colors.red.shade200, width: 1)
-            : BorderSide.none,
+        border: Border.all(
+          color: isPermanentDeleted ? Colors.red.shade200 : Colors.transparent,
+          width: isPermanentDeleted ? 1 : 0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(typeLabel,
-                      style: TextStyle(
-                          fontSize: 10, color: color, fontWeight: FontWeight.bold)),
-                ),
-                const Spacer(),
-                if (timeStr.isNotEmpty)
-                  Text(timeStr,
-                      style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
-              ]),
-              const SizedBox(height: 4),
-              ...lines.map((l) => Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(l,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-              )),
-              // ✅ زر استرجاع للمحذوف نهائياً — Super Admin بس
-              if (isPermanentDeleted && onRecover != null) ...[
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 30,
-                  child: OutlinedButton.icon(
-                    onPressed: onRecover,
-                    icon: const Icon(Icons.restore_from_trash, size: 14),
-                    label: const Text('استرجاع', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blue,
-                      side: const BorderSide(color: Colors.blue),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Fix: color-coded left accent border
+              Container(
+                width: 4,
+                color: color,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, color: color, size: 18),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(typeLabel,
+                                style: TextStyle(
+                                    fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+                          ),
+                          const Spacer(),
+                          if (timeStr.isNotEmpty)
+                            Text(timeStr,
+                                style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+                        ]),
+                        const SizedBox(height: 4),
+                        ...lines.map((l) => Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(l,
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                        )),
+                        if (isPermanentDeleted && onRecover != null) ...[
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 30,
+                            child: OutlinedButton.icon(
+                              onPressed: onRecover,
+                              icon: const Icon(Icons.restore_from_trash, size: 14),
+                              label: const Text('استرجاع', style: TextStyle(fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                                side: const BorderSide(color: Colors.blue),
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ]),
+                    ),
+                  ]),
                 ),
-              ],
-            ]),
+              ),
+            ],
           ),
-        ]),
+        ),
       ),
     );
   }

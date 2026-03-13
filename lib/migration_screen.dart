@@ -89,7 +89,18 @@ class _MigrationScreenState extends State<MigrationScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFF1A237E),
+        backgroundColor: const Color(0xFF16324F),
+        // Fix: add AppBar with back button — screen was unreachable without it
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => Navigator.pop(context),
+            tooltip: 'رجوع',
+          ),
+        ),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -107,7 +118,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
                   child: Icon(
                     _done ? Icons.cloud_done : Icons.cloud_upload,
                     size: 45,
-                    color: const Color(0xFF1A237E),
+                    color: const Color(0xFF16324F),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -138,7 +149,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
                     children: [
                       if (!_migrating && !_done && _status.isEmpty) ...[
                         const Icon(Icons.info_outline,
-                            color: Color(0xFF1A237E), size: 40),
+                            color: Color(0xFF16324F), size: 40),
                         const SizedBox(height: 12),
                         const Text(
                           'هيتم نقل:',
@@ -159,13 +170,21 @@ class _MigrationScreenState extends State<MigrationScreen> {
                       ],
 
                       if (_migrating) ...[
+                        // Fix: step-based progress — more informative than bare spinner
                         const CircularProgressIndicator(
-                            color: Color(0xFF1A237E)),
+                            color: Color(0xFF16324F), strokeWidth: 3),
                         const SizedBox(height: 16),
                         Text(
                           _status,
-                          style: const TextStyle(fontSize: 14),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                           textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        LinearProgressIndicator(
+                          backgroundColor: Colors.grey.shade200,
+                          valueColor: const AlwaysStoppedAnimation(Color(0xFF16324F)),
+                          minHeight: 4,
+                          borderRadius: BorderRadius.circular(4),
                         ),
                       ],
 
@@ -212,7 +231,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
                               fontSize: 16, fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF1A237E),
+                        foregroundColor: const Color(0xFF16324F),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -251,7 +270,7 @@ class _MigrationScreenState extends State<MigrationScreen> {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: const Color(0xFF1A237E)),
+          Icon(icon, size: 18, color: const Color(0xFF16324F)),
           const SizedBox(width: 8),
           Text(text, style: const TextStyle(fontSize: 13)),
         ],
