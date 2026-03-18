@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'firestore_service.dart';
+import 'firestore_service.dart';   // للـ updateWarehouse/updateProduct فقط (rename)
+import 'inventory_repository.dart';
 import 'auth_service.dart';
 import 'app_localizations.dart';
 import 'log_service.dart';
@@ -36,6 +37,7 @@ class _ManageScreenState extends State<ManageScreen>
   }
 
   // ──────────────────── Data ────────────────────────────────
+  // ✅ FIX: قرأ من Hive مباشرة (sync — zero network)
   Future<void> _loadData() async {
     final currentUser = await AuthService.instance.getCurrentUser();
     if (currentUser == null || !currentUser.canManage) {
@@ -45,11 +47,15 @@ class _ManageScreenState extends State<ManageScreen>
       }
       return;
     }
-    setState(() => _loading = true);
-    final wh = await FirestoreService.instance.getWarehouses();
-    final pr = await FirestoreService.instance.getProducts();
-    if (!mounted) return;
-    setState(() { _warehouses = wh; _products = pr; _loading = false; });
+    final repo = InventoryRepository.instance;
+    // ✅ Synchronous reads from Hive — no await needed
+    if (mounted) {
+      setState(() {
+        _warehouses = repo.getWarehouses();
+        _products   = repo.getProducts();
+        _loading    = false;
+      });
+    }
   }
 
   void _showSnack(String msg, Color color) {
@@ -71,24 +77,38 @@ class _ManageScreenState extends State<ManageScreen>
       hint:  AppLocalizations.warehouseNameHint,
       icon:  Icons.warehouse_rounded,
     );
-    if (result != null && result.isNotEmpty) {
-      await FirestoreService.instance.addWarehouse(result);
-      _showSnack(AppLocalizations.warehouseAddedSuccess, Colors.green);
-      await _loadData();
-    }
+    if (result == null || result.isEmpty) return;
+
+    // ✅ FIX: اكتب على Hive أولاً → UI يتحدث فوراً
+    await InventoryRepository.instance.addWarehouse(result);
+    // ✅ Push لـ Firestore في الخلفية (fire-and-forget)
+    FirestoreService.instance.addWarehouse(result);
+
+    _showSnack(AppLocalizations.warehouseAddedSuccess, Colors.green);
+    // ✅ Reload من Hive — مش من Firestore
+    setState(() {
+      _warehouses = InventoryRepository.instance.getWarehouses();
+    });
   }
 
   Future<void> _editWarehouse(String old) async {
     final result = await _showInputDialog(
-      title:  AppLocalizations.editWarehouse,
-      hint:   AppLocalizations.warehouseNameHint,
-      icon:   Icons.edit_rounded,
+      title:   AppLocalizations.editWarehouse,
+      hint:    AppLocalizations.warehouseNameHint,
+      icon:    Icons.edit_rounded,
       initial: old,
     );
-    if (result != null && result.isNotEmpty && result != old) {
-      await FirestoreService.instance.updateWarehouse(old, result);
-      await _loadData();
-    }
+    if (result == null || result.isEmpty || result == old) return;
+
+    // ✅ Hive: حذف القديم وأضف الجديد
+    await InventoryRepository.instance.removeWarehouse(old);
+    await InventoryRepository.instance.addWarehouse(result);
+    // ✅ Firestore في الخلفية
+    FirestoreService.instance.updateWarehouse(old, result);
+
+    setState(() {
+      _warehouses = InventoryRepository.instance.getWarehouses();
+    });
   }
 
   Future<void> _deleteWarehouse(String name) async {
@@ -96,15 +116,21 @@ class _ManageScreenState extends State<ManageScreen>
       title: AppLocalizations.deleteWarehouseTitle,
       itemName: name,
     );
-    if (confirm == true) {
-      await FirestoreService.instance.deleteWarehouse(name);
-      LogService.instance.log(
-        type: LogType.itemDeleted,
-        warehouse: name,
-        details: 'حذف مخزن: $name',
-      );
-      await _loadData();
-    }
+    if (confirm != true) return;
+
+    // ✅ Hive أولاً
+    await InventoryRepository.instance.removeWarehouse(name);
+    // ✅ Firestore في الخلفية
+    FirestoreService.instance.deleteWarehouse(name);
+
+    LogService.instance.log(
+      type: LogType.itemDeleted,
+      warehouse: name,
+      details: 'حذف مخزن: $name',
+    );
+    setState(() {
+      _warehouses = InventoryRepository.instance.getWarehouses();
+    });
   }
 
   // ──────────────────── Product CRUD ────────────────────────
@@ -114,11 +140,15 @@ class _ManageScreenState extends State<ManageScreen>
       hint:  AppLocalizations.productNameHint,
       icon:  Icons.inventory_2_rounded,
     );
-    if (result != null && result.isNotEmpty) {
-      await FirestoreService.instance.addProduct(result);
-      _showSnack(AppLocalizations.productAddedSuccess, Colors.green);
-      await _loadData();
-    }
+    if (result == null || result.isEmpty) return;
+
+    await InventoryRepository.instance.addProduct(result);
+    FirestoreService.instance.addProduct(result);
+
+    _showSnack(AppLocalizations.productAddedSuccess, Colors.green);
+    setState(() {
+      _products = InventoryRepository.instance.getProducts();
+    });
   }
 
   Future<void> _editProduct(String old) async {
@@ -128,10 +158,15 @@ class _ManageScreenState extends State<ManageScreen>
       icon:    Icons.edit_rounded,
       initial: old,
     );
-    if (result != null && result.isNotEmpty && result != old) {
-      await FirestoreService.instance.updateProduct(old, result);
-      await _loadData();
-    }
+    if (result == null || result.isEmpty || result == old) return;
+
+    await InventoryRepository.instance.removeProduct(old);
+    await InventoryRepository.instance.addProduct(result);
+    FirestoreService.instance.updateProduct(old, result);
+
+    setState(() {
+      _products = InventoryRepository.instance.getProducts();
+    });
   }
 
   Future<void> _deleteProduct(String name) async {
@@ -139,15 +174,19 @@ class _ManageScreenState extends State<ManageScreen>
       title: AppLocalizations.deleteProductTitle,
       itemName: name,
     );
-    if (confirm == true) {
-      await FirestoreService.instance.deleteProduct(name);
-      LogService.instance.log(
-        type: LogType.itemDeleted,
-        product: name,
-        details: 'حذف منتج: $name',
-      );
-      await _loadData();
-    }
+    if (confirm != true) return;
+
+    await InventoryRepository.instance.removeProduct(name);
+    FirestoreService.instance.deleteProduct(name);
+
+    LogService.instance.log(
+      type: LogType.itemDeleted,
+      product: name,
+      details: 'حذف منتج: $name',
+    );
+    setState(() {
+      _products = InventoryRepository.instance.getProducts();
+    });
   }
 
   // ──────────────────── Dialogs ─────────────────────────────
@@ -198,7 +237,8 @@ class _ManageScreenState extends State<ManageScreen>
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: _primary, width: 2),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
               onSubmitted: (val) => Navigator.pop(ctx, val.trim()),
             ),
@@ -214,8 +254,10 @@ class _ManageScreenState extends State<ManageScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primary,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
               child: Text(
                 initial != null ? AppLocalizations.save : AppLocalizations.add,
@@ -228,13 +270,16 @@ class _ManageScreenState extends State<ManageScreen>
     );
   }
 
-  Future<bool?> _showDeleteDialog({required String title, required String itemName}) {
+  Future<bool?> _showDeleteDialog(
+      {required String title, required String itemName}) {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: AppLocalizations.isArabic ? TextDirection.rtl : TextDirection.ltr,
+        textDirection:
+            AppLocalizations.isArabic ? TextDirection.rtl : TextDirection.ltr,
         child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(children: [
             Container(
               padding: const EdgeInsets.all(8),
@@ -242,11 +287,14 @@ class _ManageScreenState extends State<ManageScreen>
                 color: Colors.red.shade50,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.delete_outline_rounded, color: Colors.red.shade600, size: 20),
+              child: Icon(Icons.delete_outline_rounded,
+                  color: Colors.red.shade600, size: 20),
             ),
             const SizedBox(width: 10),
-            Expanded(child: Text(title,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+            Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800))),
           ]),
           content: Container(
             padding: const EdgeInsets.all(14),
@@ -278,7 +326,8 @@ class _ManageScreenState extends State<ManageScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red.shade600,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
@@ -294,10 +343,12 @@ class _ManageScreenState extends State<ManageScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(color: _primary, strokeWidth: 2.5),
+            const CircularProgressIndicator(
+                color: _primary, strokeWidth: 2.5),
             const SizedBox(height: 12),
             Text(AppLocalizations.loading,
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 14)),
+                style:
+                    TextStyle(color: Colors.grey.shade500, fontSize: 14)),
           ],
         ),
       );
@@ -316,14 +367,18 @@ class _ManageScreenState extends State<ManageScreen>
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                isWarehouse ? Icons.warehouse_rounded : Icons.inventory_2_rounded,
+                isWarehouse
+                    ? Icons.warehouse_rounded
+                    : Icons.inventory_2_rounded,
                 size: 36,
                 color: _primary.withValues(alpha: 0.3),
               ),
             ),
             const SizedBox(height: 16),
             Text(
-              isWarehouse ? AppLocalizations.noWarehouses : AppLocalizations.noProducts,
+              isWarehouse
+                  ? AppLocalizations.noWarehouses
+                  : AppLocalizations.noProducts,
               style: TextStyle(
                   color: Colors.grey.shade500,
                   fontSize: 16,
@@ -332,9 +387,14 @@ class _ManageScreenState extends State<ManageScreen>
             const SizedBox(height: 6),
             Text(
               isWarehouse
-                  ? (AppLocalizations.isArabic ? 'اضغط + لإضافة مخزن جديد' : 'Tap + to add a warehouse')
-                  : (AppLocalizations.isArabic ? 'اضغط + لإضافة منتج جديد' : 'Tap + to add a product'),
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                  ? (AppLocalizations.isArabic
+                      ? 'اضغط + لإضافة مخزن جديد'
+                      : 'Tap + to add a warehouse')
+                  : (AppLocalizations.isArabic
+                      ? 'اضغط + لإضافة منتج جديد'
+                      : 'Tap + to add a product'),
+              style:
+                  TextStyle(color: Colors.grey.shade400, fontSize: 13),
             ),
           ],
         ),
@@ -360,20 +420,26 @@ class _ManageScreenState extends State<ManageScreen>
             ],
           ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             leading: Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [_primary.withValues(alpha: 0.12), _primary.withValues(alpha: 0.06)],
+                  colors: [
+                    _primary.withValues(alpha: 0.12),
+                    _primary.withValues(alpha: 0.06)
+                  ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                isWarehouse ? Icons.warehouse_rounded : Icons.inventory_2_rounded,
+                isWarehouse
+                    ? Icons.warehouse_rounded
+                    : Icons.inventory_2_rounded,
                 color: _primary,
                 size: 20,
               ),
@@ -392,14 +458,18 @@ class _ManageScreenState extends State<ManageScreen>
                 _actionBtn(
                   icon: Icons.edit_rounded,
                   color: _primary,
-                  onTap: () => isWarehouse ? _editWarehouse(item) : _editProduct(item),
+                  onTap: () => isWarehouse
+                      ? _editWarehouse(item)
+                      : _editProduct(item),
                   tooltip: AppLocalizations.edit,
                 ),
                 const SizedBox(width: 4),
                 _actionBtn(
                   icon: Icons.delete_outline_rounded,
                   color: Colors.red.shade400,
-                  onTap: () => isWarehouse ? _deleteWarehouse(item) : _deleteProduct(item),
+                  onTap: () => isWarehouse
+                      ? _deleteWarehouse(item)
+                      : _deleteProduct(item),
                   tooltip: AppLocalizations.delete,
                 ),
               ],
@@ -439,7 +509,8 @@ class _ManageScreenState extends State<ManageScreen>
     final isWarehouses = _tabController.index == 0;
 
     return Directionality(
-      textDirection: AppLocalizations.isArabic ? TextDirection.rtl : TextDirection.ltr,
+      textDirection:
+          AppLocalizations.isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: const Color(0xFFF5F5F7),
         appBar: AppBar(
@@ -448,7 +519,8 @@ class _ManageScreenState extends State<ManageScreen>
           elevation: 0,
           title: Text(
             AppLocalizations.manageListsTitle,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            style:
+                const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
           ),
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(52),
@@ -466,7 +538,8 @@ class _ManageScreenState extends State<ManageScreen>
                 ),
                 labelColor: _primary,
                 unselectedLabelColor: Colors.white70,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13),
                 unselectedLabelStyle: const TextStyle(fontSize: 13),
                 indicatorSize: TabBarIndicatorSize.tab,
                 padding: const EdgeInsets.all(3),
@@ -478,7 +551,8 @@ class _ManageScreenState extends State<ManageScreen>
                       children: [
                         const Icon(Icons.warehouse_rounded, size: 16),
                         const SizedBox(width: 6),
-                        Text('${AppLocalizations.warehouses} (${_warehouses.length})'),
+                        Text(
+                            '${AppLocalizations.warehouses} (${_warehouses.length})'),
                       ],
                     ),
                   ),
@@ -488,7 +562,8 @@ class _ManageScreenState extends State<ManageScreen>
                       children: [
                         const Icon(Icons.inventory_2_rounded, size: 16),
                         const SizedBox(width: 6),
-                        Text('${AppLocalizations.products} (${_products.length})'),
+                        Text(
+                            '${AppLocalizations.products} (${_products.length})'),
                       ],
                     ),
                   ),
@@ -514,10 +589,14 @@ class _ManageScreenState extends State<ManageScreen>
           elevation: 4,
           icon: const Icon(Icons.add_rounded, size: 22),
           label: Text(
-            isWarehouses ? AppLocalizations.addWarehouse : AppLocalizations.addProduct,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            isWarehouses
+                ? AppLocalizations.addWarehouse
+                : AppLocalizations.addProduct,
+            style:
+                const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
           ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
     );
