@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -196,18 +198,33 @@ class _ScannerScreenState extends State<ScannerScreen>
     });
   }
 
-  // ── OCR ──────────────────────────────────────────────────
+  // ── OCR with crop ────────────────────────────────────────
   Future<void> _captureAndOCR() async {
     if (_processing) return;
     setState(() => _processing = true);
     try {
+      // Step 1: Take photo
       final picker = ImagePicker();
       final photo  = await picker.pickImage(
         source: ImageSource.camera, imageQuality: 95);
       if (photo == null) { setState(() => _processing = false); return; }
 
+      // Step 2: Crop — user selects the exact text region
+      setState(() => _processing = false); // pause spinner during crop UI
+      if (!mounted) return;
+      final croppedPath = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _CropScreen(imagePath: photo.path),
+          fullscreenDialog: true,
+        ),
+      );
+      if (croppedPath == null) return; // user cancelled crop
+      setState(() => _processing = true);
+
+      // Step 3: OCR on cropped image
       final textRecognizer = TextRecognizer();
-      final inputImage     = InputImage.fromFilePath(photo.path);
+      final inputImage     = InputImage.fromFilePath(croppedPath);
       final recognized     = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
@@ -1086,6 +1103,97 @@ class _AddItemScreenState extends State<AddItemScreen> {
           content: Text('اختار المخزن والمنتج أولاً')));
       return;
     }
+
+    // ── Duplicate serial check ────────────────────────────
+    final serialInput = _serialController.text.trim();
+    if (serialInput.isNotEmpty) {
+      final targetDate = widget.itemToEdit?.inventoryDate ?? widget.selectedDate;
+      if (targetDate != null) {
+        final itemsOnDay = InventoryRepository.instance.getItemsByDate(targetDate);
+        final duplicate = itemsOnDay.where((i) =>
+          i.serial?.toLowerCase() == serialInput.toLowerCase() &&
+          i.id != widget.itemToEdit?.id // exclude self when editing
+        ).firstOrNull;
+        if (duplicate != null && mounted) {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.warning_amber_rounded,
+                        color: Colors.orange.shade700, size: 22),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('سريال مكرر!',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  ),
+                ]),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'السريال "$serialInput" مسجّل بالفعل في نفس اليوم على:',
+                      style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('📦 ${duplicate.productName}',
+                              style: const TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text('🏭 ${duplicate.warehouseName}',
+                              style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('هل تريد الإضافة رغم ذلك؟',
+                        style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade700,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('أضف على أي حال'),
+                  ),
+                ],
+              ),
+            ),
+          );
+          if (confirm != true) return;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────
+
     setState(() => _loading = true);
     final item = InventoryItem(
       id: widget.itemToEdit?.id,
@@ -1372,5 +1480,286 @@ class _AddItemScreenState extends State<AddItemScreen> {
         ),
       ),
     );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// _CropScreen — built-in crop without any external package
+// User drags 4 handles to select region → returns cropped path
+// ══════════════════════════════════════════════════════════════
+class _CropScreen extends StatefulWidget {
+  final String imagePath;
+  const _CropScreen({required this.imagePath});
+
+  @override
+  State<_CropScreen> createState() => _CropScreenState();
+}
+
+class _CropScreenState extends State<_CropScreen> {
+  // Crop rect as fractions 0.0–1.0 of image display area
+  double _left   = 0.1;
+  double _top    = 0.1;
+  double _right  = 0.9;
+  double _bottom = 0.9;
+
+  bool _saving = false;
+
+  // Which handle is being dragged: 'tl','tr','bl','br','body', null
+  String? _dragging;
+  static const _handleR = 18.0; // hit radius for handles
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF16324F),
+        foregroundColor: Colors.white,
+        title: const Text('قص الصورة', style: TextStyle(fontWeight: FontWeight.bold)),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : _confirmCrop,
+            child: _saving
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('تم ✓',
+                    style: TextStyle(color: Colors.greenAccent,
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final W = constraints.maxWidth;
+          final H = constraints.maxHeight - 60; // leave room for bottom bar
+
+          return Stack(children: [
+            // ── Full image background ──
+            Positioned.fill(
+              child: Image.file(
+                File(widget.imagePath),
+                fit: BoxFit.contain,
+              ),
+            ),
+
+            // ── Dark overlay: top ──
+            Positioned(
+              left: 0, right: 0, top: 0,
+              height: _top * H,
+              child: const ColoredBox(color: Color(0x99000000)),
+            ),
+            // ── Dark overlay: bottom ──
+            Positioned(
+              left: 0, right: 0,
+              top: _bottom * H,
+              bottom: 60,
+              child: const ColoredBox(color: Color(0x99000000)),
+            ),
+            // ── Dark overlay: left ──
+            Positioned(
+              left: 0, top: _top * H,
+              width: _left * W,
+              height: (_bottom - _top) * H,
+              child: const ColoredBox(color: Color(0x99000000)),
+            ),
+            // ── Dark overlay: right ──
+            Positioned(
+              left: _right * W, top: _top * H,
+              right: 0,
+              height: (_bottom - _top) * H,
+              child: const ColoredBox(color: Color(0x99000000)),
+            ),
+
+            // ── Crop border ──
+            Positioned(
+              left: _left * W,
+              top: _top * H,
+              width: (_right - _left) * W,
+              height: (_bottom - _top) * H,
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.greenAccent, width: 2),
+                ),
+              ),
+            ),
+
+            // ── Corner handles ──
+            _handle(W, H, _left,  _top,    'tl'),
+            _handle(W, H, _right, _top,    'tr'),
+            _handle(W, H, _left,  _bottom, 'bl'),
+            _handle(W, H, _right, _bottom, 'br'),
+
+            // ── Gesture detector ──
+            Positioned(
+              left: 0, top: 0, right: 0,
+              height: H,
+              child: GestureDetector(
+                onPanStart: (d) => _onPanStart(d, W, H),
+                onPanUpdate: (d) => _onPanUpdate(d, W, H),
+                onPanEnd: (_) => setState(() => _dragging = null),
+                child: const ColoredBox(color: Colors.transparent,
+                    child: SizedBox.expand()),
+              ),
+            ),
+          ]);
+        },
+      ),
+
+      // ── Bottom bar ──
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          color: const Color(0xFF16324F),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(children: [
+            const Icon(Icons.crop_rounded, color: Colors.white54, size: 16),
+            const SizedBox(width: 8),
+            const Text('اسحب الزوايا لتحديد المنطقة',
+                style: TextStyle(color: Colors.white60, fontSize: 13)),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: _resetCrop,
+              icon: const Icon(Icons.refresh_rounded, size: 16, color: Colors.white70),
+              label: const Text('إعادة', style: TextStyle(color: Colors.white70)),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _handle(double W, double H, double fx, double fy, String id) {
+    return Positioned(
+      left: fx * W - _handleR,
+      top:  fy * H - _handleR,
+      child: Container(
+        width: _handleR * 2,
+        height: _handleR * 2,
+        decoration: BoxDecoration(
+          color: Colors.greenAccent,
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 4)],
+        ),
+      ),
+    );
+  }
+
+  void _onPanStart(DragStartDetails d, double W, double H) {
+    final x = d.localPosition.dx;
+    final y = d.localPosition.dy;
+
+    String? hit;
+    double minDist = _handleR * 2.5;
+
+    void check(String id, double fx, double fy) {
+      final dist = (Offset(fx * W, fy * H) - Offset(x, y)).distance;
+      if (dist < minDist) { minDist = dist; hit = id; }
+    }
+
+    check('tl', _left,  _top);
+    check('tr', _right, _top);
+    check('bl', _left,  _bottom);
+    check('br', _right, _bottom);
+
+    // If no handle hit but inside crop rect — move whole rect
+    if (hit == null &&
+        x > _left * W && x < _right * W &&
+        y > _top * H  && y < _bottom * H) {
+      hit = 'body';
+    }
+
+    setState(() => _dragging = hit);
+  }
+
+  void _onPanUpdate(DragUpdateDetails d, double W, double H) {
+    if (_dragging == null) return;
+    final dx = d.delta.dx / W;
+    final dy = d.delta.dy / H;
+    const minSize = 0.1;
+
+    setState(() {
+      switch (_dragging) {
+        case 'tl':
+          _left = (_left + dx).clamp(0.0, _right - minSize);
+          _top  = (_top  + dy).clamp(0.0, _bottom - minSize);
+        case 'tr':
+          _right = (_right + dx).clamp(_left + minSize, 1.0);
+          _top   = (_top   + dy).clamp(0.0, _bottom - minSize);
+        case 'bl':
+          _left   = (_left   + dx).clamp(0.0, _right - minSize);
+          _bottom = (_bottom + dy).clamp(_top + minSize, 1.0);
+        case 'br':
+          _right  = (_right  + dx).clamp(_left + minSize, 1.0);
+          _bottom = (_bottom + dy).clamp(_top + minSize, 1.0);
+        case 'body':
+          final newL = (_left   + dx).clamp(0.0, 1.0 - (_right - _left));
+          final newT = (_top    + dy).clamp(0.0, 1.0 - (_bottom - _top));
+          final w = _right - _left;
+          final h = _bottom - _top;
+          _left   = newL;
+          _top    = newT;
+          _right  = newL + w;
+          _bottom = newT + h;
+      }
+    });
+  }
+
+  void _resetCrop() {
+    setState(() {
+      _left = 0.05; _top = 0.05;
+      _right = 0.95; _bottom = 0.95;
+    });
+  }
+
+  Future<void> _confirmCrop() async {
+    setState(() => _saving = true);
+    try {
+      // Load original image using dart:ui Codec
+      final bytes       = await File(widget.imagePath).readAsBytes();
+      final buffer      = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor  = await ui.ImageDescriptor.encoded(buffer);
+      final codec       = await descriptor.instantiateCodec();
+      final frameInfo   = await codec.getNextFrame();
+      final img         = frameInfo.image;
+
+      final iW = img.width.toDouble();
+      final iH = img.height.toDouble();
+
+      // Calculate actual pixel crop rect
+      // Note: image is displayed with BoxFit.contain inside the layout area
+      // We approximate by applying fractions directly to image dimensions
+      final srcRect = Rect.fromLTRB(
+        (_left   * iW).roundToDouble(),
+        (_top    * iH).roundToDouble(),
+        (_right  * iW).roundToDouble(),
+        (_bottom * iH).roundToDouble(),
+      );
+
+      // Draw cropped region to a new picture
+      final recorder = ui.PictureRecorder();
+      final canvas   = ui.Canvas(recorder);
+      final dstRect  = Rect.fromLTWH(0, 0, srcRect.width, srcRect.height);
+      canvas.drawImageRect(img, srcRect, dstRect, Paint());
+      final picture  = recorder.endRecording();
+      final cropped  = await picture.toImage(
+          srcRect.width.round(), srcRect.height.round());
+
+      // Save to temp file
+      final data = await cropped.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) throw Exception('فشل تحويل الصورة');
+
+      final tmpDir  = Directory.systemTemp;
+      final outPath = '${tmpDir.path}/crop_${DateTime.now().millisecondsSinceEpoch}.png';
+      await File(outPath).writeAsBytes(data.buffer.asUint8List());
+
+      if (mounted) Navigator.pop(context, outPath);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ في القص: $e'), backgroundColor: Colors.red),
+        );
+        setState(() => _saving = false);
+      }
+    }
   }
 }

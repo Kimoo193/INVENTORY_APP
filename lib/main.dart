@@ -598,17 +598,42 @@ class _HomeScreenState extends State<HomeScreen> {
           stream: SyncEngine.instance.statusStream,
           builder: (context, snap) {
             final status = snap.data ?? SyncStatus.idle;
-            return Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: switch (status) {
-                SyncStatus.syncing => const SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white60),
-                  ),
-                SyncStatus.offline => const Icon(Icons.cloud_off_rounded, size: 18, color: Colors.white54),
-                SyncStatus.error   => const Icon(Icons.sync_problem_rounded, size: 18, color: Colors.orangeAccent),
-                SyncStatus.idle    => const SizedBox.shrink(),
-              },
+            if (status == SyncStatus.idle) return const SizedBox.shrink();
+
+            final (icon, color, tip) = switch (status) {
+              SyncStatus.syncing => (
+                  Icons.sync_rounded, Colors.white70,
+                  'جاري المزامنة مع السيرفر...'
+                ),
+              SyncStatus.offline => (
+                  Icons.cloud_off_rounded, Colors.white54,
+                  'أنت غير متصل — التعديلات محفوظة محلياً وستُزامن تلقائياً'
+                ),
+              SyncStatus.error   => (
+                  Icons.sync_problem_rounded, Colors.orangeAccent,
+                  'فشل الاتصال بالسيرفر — اضغط للمحاولة مجدداً'
+                ),
+              SyncStatus.idle    => (Icons.check, Colors.white, ''),
+            };
+
+            return Tooltip(
+              message: tip,
+              preferBelow: true,
+              child: GestureDetector(
+                onTap: status == SyncStatus.error
+                    ? () => SyncEngine.instance.flushNow()
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
+                  child: status == SyncStatus.syncing
+                      ? SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: color),
+                        )
+                      : Icon(icon, size: 20, color: color),
+                ),
+              ),
             );
           },
         ),
@@ -812,9 +837,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(color: Colors.white70, fontSize: 11),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
+      ),
     );
   }
 
@@ -1100,8 +1125,8 @@ class _MenuSheet extends StatelessWidget {
         ),
       ),
     ),
-      ),
-    );
+  ),
+  );
   }
 
   Widget _item(BuildContext context, IconData icon, String label, Color color,

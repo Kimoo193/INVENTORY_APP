@@ -383,10 +383,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
-  Future<void> _deleteItem(InventoryItem item) async {
-    await _confirmDeleteSwipe(item);
-  }
-
   Future<void> _moveItem(InventoryItem item) async {
     final warehouses = InventoryRepository.instance.getWarehouses();
     if (!mounted) return;

@@ -23,7 +23,6 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
   final _searchCtrl = TextEditingController();
 
   static const Color _primary = Color(0xFF16324F);
-  static const Color _gold    = Color(0xFFC69749);
 
   @override
   void initState() {
@@ -145,9 +144,13 @@ class _DeletedItemsScreenState extends State<DeletedItemsScreen> {
         final item   = _deletedItems[i];
         final reason = item['delete_reason']?.toString() ?? '';
         String rowColor = '#FFFFFF';
-        if (reason.contains('مباع') || reason.contains('Sold'))       rowColor = '#E3F2FD';
-        else if (reason.contains('تالف') || reason.contains('Damage')) rowColor = '#FFEBEE';
-        else if (reason.contains('مرتجع') || reason.contains('Return')) rowColor = '#FFF3E0';
+        if (reason.contains('مباع') || reason.contains('Sold')) {
+          rowColor = '#E3F2FD';
+        } else if (reason.contains('تالف') || reason.contains('Damage')) {
+          rowColor = '#FFEBEE';
+        } else if (reason.contains('مرتجع') || reason.contains('Return')) {
+          rowColor = '#FFF3E0';
+        }
 
         final rowStyle = CellStyle(
           backgroundColorHex: ExcelColor.fromHexString(rowColor),
