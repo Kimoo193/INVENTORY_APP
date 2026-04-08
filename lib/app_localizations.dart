@@ -59,6 +59,7 @@ class AppLocalizations {
   static String get sortDate => isArabic ? 'التاريخ' : 'Date';
   static String get sortProduct => isArabic ? 'المنتج' : 'Product';
   static String get sortWarehouse => isArabic ? 'المخزن' : 'Warehouse';
+  static String get sortSerial => isArabic ? 'السريال/الكود' : 'Serial/Code';
   static String get allWarehouses => isArabic ? 'كل المخازن' : 'All';
   static String get allConditions => isArabic ? 'الكل' : 'All';
   static String get applyFilter => isArabic ? 'تطبيق الفلتر' : 'Apply Filter';

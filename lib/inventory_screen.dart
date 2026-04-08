@@ -138,6 +138,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
       case 'product':
         r.sort((a, b) => a.productName.compareTo(b.productName));
         break;
+      case 'serial':
+        r.sort((a, b) {
+          final sa = (a.serial ?? '').trim().toLowerCase();
+          final sb = (b.serial ?? '').trim().toLowerCase();
+          if (sa.isEmpty && sb.isNotEmpty) return 1;
+          if (sa.isNotEmpty && sb.isEmpty) return -1;
+
+          final bySerial = sa.compareTo(sb);
+          if (bySerial != 0) return bySerial;
+          return a.productName.compareTo(b.productName);
+        });
+        break;
       case 'warehouse':
         r.sort((a, b) => a.warehouseName.compareTo(b.warehouseName));
         break;
@@ -290,6 +302,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       tmp.sortBy,
                       () => set(() =>
                           tmp = tmp.copyWith(sortBy: 'product'))),
+                  const SizedBox(width: 8),
+                  _sortChip(AppLocalizations.sortSerial, 'serial',
+                    tmp.sortBy,
+                    () => set(() =>
+                      tmp = tmp.copyWith(sortBy: 'serial'))),
                   const SizedBox(width: 8),
                   _sortChip(AppLocalizations.sortWarehouse,
                       'warehouse', tmp.sortBy,
