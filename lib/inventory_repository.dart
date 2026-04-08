@@ -70,7 +70,12 @@ class InventoryRepository {
     final op = SyncOperation.insert(item, localId);
     await _hive.enqueue(op);
 
-    // 3. Ensure warehouse/product exist locally
+    // 3. Push immediately when online so the new item survives refresh/reload.
+    try {
+      await _sync.flushNow();
+    } catch (_) {}
+
+    // 4. Ensure warehouse/product exist locally
     if (!_hive.getWarehouses().contains(item.warehouseName)) {
       await _hive.addWarehouse(item.warehouseName);
     }
@@ -78,7 +83,7 @@ class InventoryRepository {
       await _hive.addProduct(item.productName);
     }
 
-    // 4. Log locally (fire-and-forget)
+    // 5. Log locally (fire-and-forget)
     _logInsert(item);
 
     return localId;
@@ -112,6 +117,11 @@ class InventoryRepository {
       }
     }
 
+    // Flush immediately so imported items survive refresh/reload.
+    try {
+      await _sync.flushNow();
+    } catch (_) {}
+
     return items.length;
   }
 
@@ -122,6 +132,12 @@ class InventoryRepository {
   Future<void> updateItem(InventoryItem item) async {
     await _hive.updateItem(item);
     await _hive.enqueue(SyncOperation.update(item));
+
+    // Flush right away so edits are persisted before any screen refresh.
+    try {
+      await _sync.flushNow();
+    } catch (_) {}
+
     _logUpdate(item);
   }
 
@@ -152,6 +168,11 @@ class InventoryRepository {
       extraNotes: extraNotes,
       actorUid:   deletedByUid,
     ));
+
+    // Flush immediately so the delete is persisted before any refresh/reload.
+    try {
+      await _sync.flushNow();
+    } catch (_) {}
 
     _logDelete(item, reason: reason);
     return true;

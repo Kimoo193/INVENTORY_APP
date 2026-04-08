@@ -81,8 +81,8 @@ class _ManageScreenState extends State<ManageScreen>
 
     // ✅ FIX: اكتب على Hive أولاً → UI يتحدث فوراً
     await InventoryRepository.instance.addWarehouse(result);
-    // ✅ Push لـ Firestore في الخلفية (fire-and-forget)
-    FirestoreService.instance.addWarehouse(result);
+    // ✅ Push لـ Firestore مع await حتى لا يضيع قبل أي reload
+    await FirestoreService.instance.addWarehouse(result);
 
     _showSnack(AppLocalizations.warehouseAddedSuccess, Colors.green);
     // ✅ Reload من Hive — مش من Firestore
@@ -103,8 +103,8 @@ class _ManageScreenState extends State<ManageScreen>
     // ✅ Hive: حذف القديم وأضف الجديد
     await InventoryRepository.instance.removeWarehouse(old);
     await InventoryRepository.instance.addWarehouse(result);
-    // ✅ Firestore في الخلفية
-    FirestoreService.instance.updateWarehouse(old, result);
+    // ✅ Firestore مع await
+    await FirestoreService.instance.updateWarehouse(old, result);
 
     setState(() {
       _warehouses = InventoryRepository.instance.getWarehouses();
@@ -120,8 +120,8 @@ class _ManageScreenState extends State<ManageScreen>
 
     // ✅ Hive أولاً
     await InventoryRepository.instance.removeWarehouse(name);
-    // ✅ Firestore في الخلفية
-    FirestoreService.instance.deleteWarehouse(name);
+    // ✅ Firestore مع await
+    await FirestoreService.instance.deleteWarehouse(name);
 
     LogService.instance.log(
       type: LogType.itemDeleted,
@@ -143,7 +143,7 @@ class _ManageScreenState extends State<ManageScreen>
     if (result == null || result.isEmpty) return;
 
     await InventoryRepository.instance.addProduct(result);
-    FirestoreService.instance.addProduct(result);
+    await FirestoreService.instance.addProduct(result);
 
     _showSnack(AppLocalizations.productAddedSuccess, Colors.green);
     setState(() {
@@ -162,7 +162,7 @@ class _ManageScreenState extends State<ManageScreen>
 
     await InventoryRepository.instance.removeProduct(old);
     await InventoryRepository.instance.addProduct(result);
-    FirestoreService.instance.updateProduct(old, result);
+    await FirestoreService.instance.updateProduct(old, result);
 
     setState(() {
       _products = InventoryRepository.instance.getProducts();
@@ -177,7 +177,7 @@ class _ManageScreenState extends State<ManageScreen>
     if (confirm != true) return;
 
     await InventoryRepository.instance.removeProduct(name);
-    FirestoreService.instance.deleteProduct(name);
+    await FirestoreService.instance.deleteProduct(name);
 
     LogService.instance.log(
       type: LogType.itemDeleted,

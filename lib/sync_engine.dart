@@ -271,6 +271,15 @@ class SyncEngine {
     if (!_isOnline) return;
     _setStatus(SyncStatus.syncing);
     try {
+      if (_hive.hasPendingOps) {
+        await _flush();
+      }
+
+      if (_hive.hasPendingOps) {
+        _setStatus(SyncStatus.error);
+        return;
+      }
+
       final items      = await _fs.getAllItems();
       final warehouses = await _fs.getWarehouses();
       final products   = await _fs.getProducts();

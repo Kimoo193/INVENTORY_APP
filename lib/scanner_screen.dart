@@ -1024,7 +1024,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
     if (result != null && result.isNotEmpty) {
       await InventoryRepository.instance.addWarehouse(result);
       // Also sync to Firestore immediately (admin action, usually online)
-      FirestoreService.instance.addWarehouse(result);
+      await FirestoreService.instance.addWarehouse(result);
       await _loadDropdowns();
       setState(() => _selectedWarehouse = result);
     }
@@ -1055,7 +1055,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
     );
     if (result != null && result.isNotEmpty) {
       await InventoryRepository.instance.addProduct(result);
-      FirestoreService.instance.addProduct(result);
+      await FirestoreService.instance.addProduct(result);
       await _loadDropdowns();
       setState(() => _selectedProduct = result);
     }
